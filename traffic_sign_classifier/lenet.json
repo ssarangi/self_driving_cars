@@ -1,0 +1,53 @@
+{
+    "conv1":
+    {
+        "type": "cnn",
+        "filters": 6,
+        "kernel_size": [5, 5],
+        "strides": [1, 1],
+        "padding": "SAME",
+        "activation_func": "relu",
+        "maxpool":
+        {
+            "size": [2, 2],
+            "strides": [2, 2]
+        },
+        "connects_to": "conv2"
+    },
+    "conv2":
+    {
+        "type": "cnn",
+        "filters": 64,
+        "kernel_size": [5, 5],
+        "strides": [1, 1],
+        "padding": "SAME",
+        "activation_func": "relu",
+        "maxpool":
+        {
+            "size": [2, 2],
+            "strides": [2, 2]
+        },
+        "connects_to": "flatten_layer"
+    },
+    "flatten_layer":
+    {
+        "type": "flatten",
+        "connects_to": "dense_layer_1"
+    },
+    "dense_layer_1":
+    {
+        "type": "flatten",
+        "units": 1024,
+        "dropout":
+        {
+            "rate": 0.4
+        },
+        "connects_to": "logits"
+    },
+    "logits":
+    {
+        "type": "dense",
+        "units": 1024,
+        "connects_to": null
+    }
+}
