@@ -8,6 +8,8 @@ import pickle
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 
+import argparse
+
 # H = height, W = width, D = depth
 #
 # We have an input of shape 32x32x3 (HxWxD)
@@ -27,10 +29,12 @@ def convolutional_layer(input, num_input_filters, num_output_filters, filter_sha
 
     # Activation Layer
     conv = tf.nn.relu(conv)
+
     print(name + ": " + str(conv.get_shape().as_list()))
     return conv, num_output_filters
 
-def fully_connected_layer(input, input_size, output_size, mean, stddev, activation_func, name):
+def fully_connected_layer(input, input_size, output_size, mean, stddev,
+                          activation_func, dropout_prob, name):
     fc_W = tf.Variable(tf.truncated_normal(shape=(input_size, output_size), mean=mean, stddev=stddev), name=name+"_W")
     fc_b = tf.Variable(tf.zeros(output_size), name=name+"_b")
     fc   = tf.matmul(input, fc_W) + fc_b
@@ -38,7 +42,77 @@ def fully_connected_layer(input, input_size, output_size, mean, stddev, activati
     if activation_func is not None:
         fc = activation_func(fc)
 
+    if dropout_prob > 0.0:
+        fc = tf.nn.dropout(fc, dropout_prob)
+
     return fc, output_size
+
+def maxpool2d_and_dropout(input, ksize, strides, padding, dropout_prob):
+    maxpool = tf.nn.max_pool(input, ksize, strides, padding)
+
+    output = maxpool
+    if dropout_prob > 0.0:
+        dropout = tf.nn.dropout(maxpool, dropout_prob)
+
+    return output
+
+def simple_1conv_layer_nn(x, cfg):
+    mu = 0
+    sigma = 0.1
+
+    # Convolutional Layer 1: Input 32x32x3         Output = 26x26x12
+    conv1, num_output_filters = convolutional_layer(x, num_input_filters=3, num_output_filters=12,
+                               filter_shape=(7, 7), strides=[1,1,1,1], padding='VALID',
+                               mean=mu, stddev=sigma, name="conv2d_1")
+
+    # Now use a fully connected Layer
+    fc0 = flatten(conv1)
+
+    shape = fc0.get_shape().as_list()[1]
+
+    # Use 2 more layers
+    # Fully Connected: Input = 192               Output = 96
+    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.0, "fc1")
+
+    # Fully Connected: Input = 96               Output = 43
+    logits, output_size = fully_connected_layer(fc1, 96, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
+
+    return logits
+
+def simple_2conv_layer_nn(x, cfg):
+    mu = 0
+    sigma = 0.1
+
+    # Convolutional Layer 1: Input 32x32x3         Output = 26x26x12
+    conv1, num_output_filters = convolutional_layer(x, num_input_filters=3, num_output_filters=12,
+                               filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
+                               mean=mu, stddev=sigma, name="conv2d_1")
+
+    conv1 = maxpool2d_and_dropout(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                  padding='VALID', dropout_prob=0.0)
+
+
+    conv2, num_output_filters = convolutional_layer(conv1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+                               filter_shape=(7, 7), strides=[1,1,1,1], padding='SAME',
+                               mean=mu, stddev=sigma, name="conv2d_1")
+
+    conv2 = maxpool2d_and_dropout(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                  padding='VALID', dropout_prob=0.0)
+
+    # Now use a fully connected Layer
+    fc0 = flatten(conv1)
+
+    shape = fc0.get_shape().as_list()[1]
+
+    # Use 2 more layers
+    # Fully Connected: Input = 192               Output = 96
+    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.0, "fc1")
+
+    # Fully Connected: Input = 96               Output = 43
+    logits, output_size = fully_connected_layer(fc1, 96, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
+
+    return logits
+
 
 # AlexNet implementation
 def AlexNet(x, cfg):
@@ -88,26 +162,26 @@ def AlexNet(x, cfg):
     print(fc0.get_shape())
 
     # Fully Connected: Input = 6144                Output = 3072
-    fc1, output_size = fully_connected_layer(fc0, 6144, 3072, mu, sigma, tf.nn.relu, "fc1")
+    fc1, output_size = fully_connected_layer(fc0, 6144, 3072, mu, sigma, tf.nn.relu, 0.0, "fc1")
 
     # Fully Connected: Input = 3072                Output = 1536
-    fc2, output_size = fully_connected_layer(fc1, 3072, 1536, mu, sigma, tf.nn.relu, "fc2")
+    fc2, output_size = fully_connected_layer(fc1, 3072, 1536, mu, sigma, tf.nn.relu, 0.0, "fc2")
 
     # Fully Connected: Input = 1536               Output = 768
-    fc3, output_size = fully_connected_layer(fc2, 1536, 768, mu, sigma, tf.nn.relu, "fc3")
+    fc3, output_size = fully_connected_layer(fc2, 1536, 768, mu, sigma, tf.nn.relu, 0.0, "fc3")
 
 
     # Fully Connected: Input = 768               Output = 384
-    fc4, output_size = fully_connected_layer(fc3, 768, 384, mu, sigma, tf.nn.relu, "fc4")
+    fc4, output_size = fully_connected_layer(fc3, 768, 384, mu, sigma, tf.nn.relu, 0.0, "fc4")
 
     # Fully Connected: Input = 384               Output = 192
-    fc5, output_size = fully_connected_layer(fc4, 384, 192, mu, sigma, tf.nn.relu, "fc5")
+    fc5, output_size = fully_connected_layer(fc4, 384, 192, mu, sigma, tf.nn.relu, 0.0, "fc5")
 
     # Fully Connected: Input = 192               Output = 96
-    fc6, output_size = fully_connected_layer(fc5, 192, 96, mu, sigma, tf.nn.relu, "fc6")
+    fc6, output_size = fully_connected_layer(fc5, 192, 96, mu, sigma, tf.nn.relu, 0.0, "fc6")
 
     # Fully Connected: Input = 96               Output = 43
-    logits, output_size = fully_connected_layer(fc6, 96, 43, mu, sigma, tf.nn.relu, "logits")
+    logits, output_size = fully_connected_layer(fc6, 96, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
 
     return logits
 
@@ -191,10 +265,7 @@ def train(cfg):
 
     one_hot_y = tf.one_hot(y, cfg.MAX_LABELS)
 
-    if cfg.USE_CUSTOM_NN:
-        logits = AlexNet(x, cfg)
-    else:
-        logits = LeNet(x, cfg)
+    logits = cfg.NETWORKS[cfg.NN_NAME](x, cfg)
 
     cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
                     logits=logits, labels=one_hot_y)
@@ -236,7 +307,7 @@ class NNConfig:
     one spot so its easier to run it.
     """
     def __init__(self, EPOCHS, BATCH_SIZE, MAX_LABEL_SIZE, INPUT_LAYER_SHAPE,
-                 LEARNING_RATE, SAVE_MODEL, USE_CUSTOM_NN):
+                 LEARNING_RATE, SAVE_MODEL, NN_NAME):
         """
         EPOCHS: How many times are we running this network
         BATCH_SIZE: How many inputs do we consider while running this data
@@ -255,11 +326,18 @@ class NNConfig:
         self.INPUT_LAYER_SHAPE = INPUT_LAYER_SHAPE
         self.LEARNING_RATE = LEARNING_RATE
         self.SAVE_MODEL = SAVE_MODEL
-        self.USE_CUSTOM_NN = USE_CUSTOM_NN
+        self.NN_NAME = NN_NAME
 
         assert(len(INPUT_LAYER_SHAPE) == 3)
 
         self.NUM_CHANNELS_IN_IMAGE = INPUT_LAYER_SHAPE[2]
+
+        self.NETWORKS = {
+            "simple_nn1": simple_1conv_layer_nn,
+            "simple_nn2": simple_2conv_layer_nn,
+            "lenet": LeNet,
+            "alexnet": AlexNet
+        }
 
 
 class TensorOps:
@@ -317,6 +395,18 @@ def load_traffic_sign_data(training_file, testing_file):
 def main():
     data = load_traffic_sign_data('data/train.p', 'data/test.p')
 
+    # parser = argparse.ArgumentParser(description='Process some integers.')
+    #
+    # parser.add_argument('epochs', metavar='Epochs', type=int, nargs='+',
+    #                 help='an integer for the accumulator')
+    #
+    # parser.add_argument('--sum', dest='accumulate', action='store_const',
+    #                 const=sum, default=max,
+    #                 help='sum the integers (default: find the max)')
+    #
+    # args = parser.parse_args()
+    # print(args.accumulate(args.integers))
+
     # Find the Max Classified Id - For example, in MNIST data we have digits
     # from 0,..,9
     # Hence the max classified ID is 10
@@ -326,13 +416,13 @@ def main():
     print("Max Classified id: %s" % (max_classified_id))
 
     # Define the EPOCHS & BATCH_SIZE
-    cfg = NNConfig(EPOCHS=20,
+    cfg = NNConfig(EPOCHS=200,
                    BATCH_SIZE=128,
                    MAX_LABEL_SIZE=max_classified_id,
                    INPUT_LAYER_SHAPE=data.X_train[0].shape,
                    LEARNING_RATE=0.001,
                    SAVE_MODEL=False,
-                   USE_CUSTOM_NN=True)
+                   NN_NAME="simple_nn2")
 
     tensor_ops = train(cfg)
 
