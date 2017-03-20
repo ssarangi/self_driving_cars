@@ -1,3 +1,4 @@
+# -*- coding: latin-1 -*-
 import numpy as np
 
 import tensorflow as tf
@@ -12,7 +13,7 @@ import argparse
 
 import pandas as pd
 import random
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 import sys
 def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, bar_length=100):
@@ -453,11 +454,11 @@ class Data:
         f = open('data/augmented_data.p', 'wb')
         pickle.dump(train, f)
 
-        bincounts = np.bincount(self.y_train)
-        bincounts = bincounts[self.y_train]
-        fig, ax = plt.subplots()
-        ax.bar(self.y_train, bincounts)
-        plt.show()
+        # bincounts = np.bincount(self.y_train)
+        # bincounts = bincounts[self.y_train]
+        # fig, ax = plt.subplots()
+        # ax.bar(self.y_train, bincounts)
+        # plt.show()
 
     def augment_data(self, augmentation_factor):
         """
