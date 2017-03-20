@@ -496,6 +496,10 @@ def load_traffic_sign_data(training_file, testing_file):
     X_train, y_train = train['features'], train['labels']
     X_test, y_test = test['features'], test['labels']
 
+    # Normalize the RGB values to 0.0 to 1.0
+    X_train = X_train / 255
+    X_test  = X_test / 255
+
     # Split the data into the training and validation steps.
     X_train, X_validation, y_train, y_validation = train_test_split(X_train, y_train, test_size=0.2, random_state=0)
 
