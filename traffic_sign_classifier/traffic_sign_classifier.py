@@ -1,4 +1,3 @@
-# -*- coding: latin-1 -*-
 import numpy as np
 
 import tensorflow as tf
@@ -399,11 +398,11 @@ class Image:
 
     @staticmethod
     def add_blur(img):
-        return ndimage.gaussian_filter(img, sigma=random.rantint(1, 4))
+        return ndimage.gaussian_filter(img, sigma=random.randint(1, 4))
 
     @staticmethod
     def perform_random_op(img):
-        ops = [Image.rotate_image, Image.edge_detected, Image.add_blur]
+        ops = [Image.rotate_image, Image.add_blur]
 
         random_op = ops[random.randint(0, len(ops) - 1)]
         return random_op(img)
