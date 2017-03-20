@@ -10,6 +10,11 @@ from sklearn.utils import shuffle
 
 import argparse
 
+import pandas as pd
+import random
+import matplotlib.pyplot as plt
+
+
 # H = height, W = width, D = depth
 #
 # We have an input of shape 32x32x3 (HxWxD)
@@ -260,12 +265,14 @@ def LeNet(x, cfg):
 
 
 def train(cfg):
+    global NETWORKS
+
     x = tf.placeholder(tf.float32, (None,) + cfg.INPUT_LAYER_SHAPE, name='X')
     y = tf.placeholder(tf.int32, (None), name='Y')
 
     one_hot_y = tf.one_hot(y, cfg.MAX_LABELS)
 
-    logits = cfg.NETWORKS[cfg.NN_NAME](x, cfg)
+    logits = NETWORKS[cfg.NN_NAME](x, cfg)
 
     cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
                     logits=logits, labels=one_hot_y)
@@ -332,14 +339,6 @@ class NNConfig:
 
         self.NUM_CHANNELS_IN_IMAGE = INPUT_LAYER_SHAPE[2]
 
-        self.NETWORKS = {
-            "simple_nn1": simple_1conv_layer_nn,
-            "simple_nn2": simple_2conv_layer_nn,
-            "lenet": LeNet,
-            "alexnet": AlexNet
-        }
-
-
 class TensorOps:
     """
     This class stores the tensor ops which are the end layers which we use for
@@ -360,6 +359,23 @@ class TensorOps:
         self.saver = saver
 
 
+class Image:
+    @staticmethod
+    def rotate_image(img):
+        pass
+
+    def add_noise(img):
+        pass
+
+    def add_blur(img):
+        pass
+
+    def perform_random_op(img):
+        ops = [Image.rotate_image, Image.add_noise, Image.add_blur]
+
+        random_op = ops[random.randint(0, len(ops) - 1)]
+        return random_op(img)
+
 class Data:
     """
     Encode the different data so its easier to pass them around
@@ -373,6 +389,70 @@ class Data:
         self.X_test = X_test
         self.y_test = y_test
 
+        self.dataframe = pd.DataFrame(y_train)
+
+    def statistics(self):
+        """
+        Figure out statistics on the data using Pandas.
+        """
+        print(self.dataframe.describe())
+
+    def _augment_data_for_class(self, label_id, augmented_size):
+        """
+        Internal method which will augment the data size for the specified label.
+        It will calculate the initial size and augment it to its size.
+        """
+        print("Augmenting class: %s" % label_id)
+
+        training_labels = np.concatenate((self.y_train, self.y_validation))
+        training_data   = np.concatenate((self.X_train, self.x_validation))
+
+        # find all the indices for the label id
+        indices = np.where(training_labels == label_id)
+        total_data_len = len(indices)
+
+        # Find a random ID from the indices and perform a random operation
+        for i in range(0, (augmented_size - total_data_len)):
+            random_idx = random.choice(indices)
+            img = training_data[random_idx]
+            nimg = Image.perform_random_op(img=img)
+
+            # Add this to the training dataset
+            np.append(self.X_train, nimg)
+            np.append(self.y_train, label_id)
+
+        # Now save the augmented data
+        train = {}
+        train['features'] = self.X_train
+        train['labels'] = self.y_train
+
+        pickle.dump(train, "data/augmented_data.pickle")
+
+        bincounts = np.bincount(self.y_train)
+        bincounts = bincounts[self.y_train]
+        fig, ax = plt.subplots()
+        ax.bar(self.y_train, bincounts)
+        plt.show()
+
+    def augment_data(self, augmentation_factor):
+        """
+        Augment the input data with more data so that we can make all the labels
+        uniform
+        """
+        # Find the class label which has the highest images. We will decide the
+        # augmentation size based on that multipled by the augmentation factor
+        bincounts = np.bincount(self.y_train)
+        label_counts = bincounts.shape[0]
+
+        max_label_count = np.max(bincounts)
+        max_label_idx = np.argmax(bincounts)
+        augmentation_data_size = max_label_count * augmentation_factor
+
+        for i in range(0, label_counts):
+            self._augment_data_for_class(i, augmentation_data_size)
+
+        self.X_train = shuffle(self.X_train)
+        self.y_train = shuffle(self.y_train)
 
 # Data Loading and processing part
 def load_traffic_sign_data(training_file, testing_file):
@@ -391,21 +471,38 @@ def load_traffic_sign_data(training_file, testing_file):
     data = Data(X_train, y_train, X_validation, y_validation, X_test, y_test)
     return data
 
+# Networks
+NETWORKS = {
+    "simple_nn1": simple_1conv_layer_nn,
+    "simple_nn2": simple_2conv_layer_nn,
+    "lenet": LeNet,
+    "alexnet": AlexNet
+}
 
 def main():
+    global NETWORKS
     data = load_traffic_sign_data('data/train.p', 'data/test.p')
 
-    # parser = argparse.ArgumentParser(description='Process some integers.')
-    #
-    # parser.add_argument('epochs', metavar='Epochs', type=int, nargs='+',
-    #                 help='an integer for the accumulator')
-    #
-    # parser.add_argument('--sum', dest='accumulate', action='store_const',
-    #                 const=sum, default=max,
-    #                 help='sum the integers (default: find the max)')
-    #
-    # args = parser.parse_args()
-    # print(args.accumulate(args.integers))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--statistics", help="Display Statistics for input data"
+                        ,action="store_true")
+
+    parser.add_argument("--epochs", help="Number of Epochs to train the network for"
+                        ,type=int, default=20)
+
+    parser.add_argument("--batch_size", help="Batch Size for training data"
+                        ,type=int, default=128)
+
+    parser.add_argument("--learning_rate", help="Learning Rate for Neural Network"
+                        ,type=float, default=0.001)
+
+    parser.add_argument("--network", help="Specify which Neural Network to execute"
+                        ,choices=list(NETWORKS.keys()), default="simple_nn1")
+
+    parser.add_argument("--augmentation_factor", help="Specify the data augmentation multiplier. Eg. amplify all input training data by 5 times"
+                        ,type=int, default=1)
+
+    args = parser.parse_args()
 
     # Find the Max Classified Id - For example, in MNIST data we have digits
     # from 0,..,9
@@ -415,14 +512,21 @@ def main():
     max_classified_id = np.max(data.y_train) + 1
     print("Max Classified id: %s" % (max_classified_id))
 
+    if args.statistics is True:
+        data.statistics()
+        return
+
+    data.augment_data(args.augmentation_factor)
+    return
+
     # Define the EPOCHS & BATCH_SIZE
-    cfg = NNConfig(EPOCHS=200,
-                   BATCH_SIZE=128,
+    cfg = NNConfig(EPOCHS=args.epochs,
+                   BATCH_SIZE=args.batch_size,
                    MAX_LABEL_SIZE=max_classified_id,
                    INPUT_LAYER_SHAPE=data.X_train[0].shape,
-                   LEARNING_RATE=0.001,
+                   LEARNING_RATE=args.learning_rate,
                    SAVE_MODEL=False,
-                   NN_NAME="simple_nn2")
+                   NN_NAME=args.network)
 
     tensor_ops = train(cfg)
 
