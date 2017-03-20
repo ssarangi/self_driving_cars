@@ -389,8 +389,7 @@ class Image:
     @staticmethod
     def rotate_image(img):
         # Rotate the image by a random angle (-45 to 45 degrees)
-        rotated = ndimage.rotate(img, random.randint(-45, 45))
-        return rotated
+        return ndimage.rotate(img, random.randint(-45, 45))
 
     @staticmethod
     def edge_detected(img):
@@ -402,8 +401,7 @@ class Image:
 
     @staticmethod
     def perform_random_op(img):
-        ops = [Image.rotate_image, Image.add_blur]
-
+        ops = [Image.rotate_image, Image.edge_detected, Image.add_blur]
         random_op = ops[random.randint(0, len(ops) - 1)]
         return random_op(img)
 
@@ -439,13 +437,13 @@ class Data:
         training_data   = np.concatenate((self.X_train, self.X_validation))
 
         # find all the indices for the label id
-        indices = np.where(training_labels == label_id)
+        indices = np.array(np.where(training_labels == label_id))[0]
         total_data_len = len(indices)
 
         # Find a random ID from the indices and perform a random operation
         for i in range(0, (augmented_size - total_data_len)):
             print_progress_bar(i, (augmented_size - total_data_len), prefix='Progress:', suffix='Complete', bar_length=50)
-            random_idx = random.choice(indices)
+            random_idx = np.random.choice(indices)
             img = training_data[random_idx]
             nimg = Image.perform_random_op(img=img)
 
