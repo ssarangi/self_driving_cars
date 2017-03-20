@@ -14,6 +14,29 @@ import pandas as pd
 import random
 import matplotlib.pyplot as plt
 
+import sys
+def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, bar_length=100):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        bar_length  - Optional  : character length of bar (Int)
+    """
+    str_format = "{0:." + str(decimals) + "f}"
+    percents = str_format.format(100 * (iteration / float(total)))
+    filled_length = int(round(bar_length * iteration / float(total)))
+    bar = '█' * filled_length + '-' * (bar_length - filled_length)
+
+    sys.stdout.write('\r%s |%s| %s%s %s' % (prefix, bar, percents, '%', suffix)),
+
+    if iteration == total:
+        sys.stdout.write('\n')
+    sys.stdout.flush()
+
 
 # H = height, W = width, D = depth
 #
@@ -405,7 +428,7 @@ class Data:
         print("Augmenting class: %s" % label_id)
 
         training_labels = np.concatenate((self.y_train, self.y_validation))
-        training_data   = np.concatenate((self.X_train, self.x_validation))
+        training_data   = np.concatenate((self.X_train, self.X_validation))
 
         # find all the indices for the label id
         indices = np.where(training_labels == label_id)
@@ -413,6 +436,7 @@ class Data:
 
         # Find a random ID from the indices and perform a random operation
         for i in range(0, (augmented_size - total_data_len)):
+            print_progress_bar(i, (augmented_size - total_data_len), prefix='Progress:', suffix='Complete', bar_length=50)
             random_idx = random.choice(indices)
             img = training_data[random_idx]
             nimg = Image.perform_random_op(img=img)
@@ -426,7 +450,7 @@ class Data:
         train['features'] = self.X_train
         train['labels'] = self.y_train
 
-        pickle.dump(train, "data/augmented_data.pickle")
+        pickle.dump(train, "data/augmented_data.p")
 
         bincounts = np.bincount(self.y_train)
         bincounts = bincounts[self.y_train]
@@ -481,7 +505,6 @@ NETWORKS = {
 
 def main():
     global NETWORKS
-    data = load_traffic_sign_data('data/train.p', 'data/test.p')
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--statistics", help="Display Statistics for input data"
@@ -502,7 +525,15 @@ def main():
     parser.add_argument("--augmentation_factor", help="Specify the data augmentation multiplier. Eg. amplify all input training data by 5 times"
                         ,type=int, default=1)
 
+    parser.add_argument("--use_augmented_file", help="Use Augmented Training Data file"
+                        ,action="store_true")
+
     args = parser.parse_args()
+
+    if args.use_augmented_file:
+        data = load_traffic_sign_data('data/augmented_data.p', 'data/test.p')
+    else:
+        data = load_traffic_sign_data('data/train.p', 'data/test.p')
 
     # Find the Max Classified Id - For example, in MNIST data we have digits
     # from 0,..,9
@@ -516,8 +547,8 @@ def main():
         data.statistics()
         return
 
-    data.augment_data(args.augmentation_factor)
-    return
+    if not args.use_augmented_file:
+        data.augment_data(args.augmentation_factor)
 
     # Define the EPOCHS & BATCH_SIZE
     cfg = NNConfig(EPOCHS=args.epochs,
