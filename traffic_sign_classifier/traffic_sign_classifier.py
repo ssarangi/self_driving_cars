@@ -15,6 +15,9 @@ import pandas as pd
 import random
 # import matplotlib.pyplot as plt
 
+from scipy import ndimage
+import cv2
+
 import sys
 def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, bar_length=100):
     """
@@ -386,16 +389,21 @@ class TensorOps:
 class Image:
     @staticmethod
     def rotate_image(img):
-        pass
+        # Rotate the image by a random angle (-45 to 45 degrees)
+        rotated = ndimage.rotate(img, random.randint(-45, 45))
+        return rotated
 
-    def add_noise(img):
-        pass
+    @staticmethod
+    def edge_detected(img):
+        return cv2.Canny(img, 50, 150)
 
+    @staticmethod
     def add_blur(img):
-        pass
+        return ndimage.gaussian_filter(img, sigma=random.rantint(1, 4))
 
+    @staticmethod
     def perform_random_op(img):
-        ops = [Image.rotate_image, Image.add_noise, Image.add_blur]
+        ops = [Image.rotate_image, Image.edge_detected, Image.add_blur]
 
         random_op = ops[random.randint(0, len(ops) - 1)]
         return random_op(img)
