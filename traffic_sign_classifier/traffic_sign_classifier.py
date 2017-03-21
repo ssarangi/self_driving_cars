@@ -7,6 +7,9 @@ import pickle
 
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
+from skimage.transform import rotate
+from skimage.transform import warp
+from skimage.transform import ProjectiveTransform
 
 import argparse
 
@@ -41,16 +44,6 @@ def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, bar_l
     sys.stdout.flush()
 
 
-# H = height, W = width, D = depth
-#
-# We have an input of shape 32x32x3 (HxWxD)
-# 20 filters of shape 8x8x3 (HxWxD)
-# A stride of 2 for both the height and width (S)
-# Valid padding of size 1 (P)
-
-# new_height = (input_height - filter_height + 2 * P)/S + 1
-# new_width = (input_width - filter_width + 2 * P)/S + 1
-
 def convolutional_layer(input, num_input_filters, num_output_filters, filter_shape,
                         strides, padding, mean, stddev, name):
     conv_W = tf.Variable(tf.truncated_normal(shape=filter_shape+(num_input_filters, num_output_filters), mean=mean, stddev=stddev), name+"_weights")
@@ -63,6 +56,7 @@ def convolutional_layer(input, num_input_filters, num_output_filters, filter_sha
 
     print(name + ": " + str(conv.get_shape().as_list()))
     return conv, num_output_filters
+
 
 def fully_connected_layer(input, input_size, output_size, mean, stddev,
                           activation_func, dropout_prob, name):
@@ -78,6 +72,7 @@ def fully_connected_layer(input, input_size, output_size, mean, stddev,
 
     return fc, output_size
 
+
 def maxpool2d_and_dropout(input, ksize, strides, padding, dropout_prob):
     maxpool = tf.nn.max_pool(input, ksize, strides, padding)
 
@@ -86,6 +81,7 @@ def maxpool2d_and_dropout(input, ksize, strides, padding, dropout_prob):
         dropout = tf.nn.dropout(maxpool, dropout_prob)
 
     return output
+
 
 def simple_1conv_layer_nn(x, cfg):
     mu = 0
@@ -109,6 +105,7 @@ def simple_1conv_layer_nn(x, cfg):
     logits, output_size = fully_connected_layer(fc1, 96, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
 
     return logits
+
 
 def simple_2conv_layer_nn(x, cfg):
     mu = 0
@@ -365,6 +362,7 @@ class NNConfig:
 
         self.NUM_CHANNELS_IN_IMAGE = INPUT_LAYER_SHAPE[2]
 
+
 class TensorOps:
     """
     This class stores the tensor ops which are the end layers which we use for
@@ -387,23 +385,101 @@ class TensorOps:
 
 class Image:
     @staticmethod
-    def rotate_image(img):
+    def rotate_image(img, label):
         # Rotate the image by a random angle (-45 to 45 degrees)
-        return ndimage.rotate(img, random.randint(-45, 45))
+        # Rotation has to be done within a very narrow range since it could
+        # affect the meaning of the sign itself.
+        # Choosing -10 to 10 degrees
+        angle = np.random.choice(np.random.normal(0, 1.0, 1000))
+        return ndimage.rotate(img, angle)
 
     @staticmethod
-    def edge_detected(img):
-        return cv2.Canny(img, 50, 150)
+    def apply_projection_transform(img, label):
+        image_size = img.shape[1]
+        d = image_size
+        for i in range(img.shape[0]):
+            tl_top = random.uniform(-d, d)     # Top left corner, top margin
+            tl_left = random.uniform(-d, d)    # Top left corner, left margin
+            bl_bottom = random.uniform(-d, d)  # Bottom left corner, bottom margin
+            bl_left = random.uniform(-d, d)    # Bottom left corner, left margin
+            tr_top = random.uniform(-d, d)     # Top right corner, top margin
+            tr_right = random.uniform(-d, d)   # Top right corner, right margin
+            br_bottom = random.uniform(-d, d)  # Bottom right corner, bottom margin
+            br_right = random.uniform(-d, d)   # Bottom right corner, right margin
+
+            transform = ProjectiveTransform()
+            transform.estimate(np.array((
+                    (tl_left, tl_top),
+                    (bl_left, image_size - bl_bottom),
+                    (image_size - br_right, image_size - br_bottom),
+                    (image_size - tr_right, tr_top)
+                )), np.array((
+                    (0, 0),
+                    (0, image_size),
+                    (image_size, image_size),
+                    (image_size, 0)
+                )))
+            img[i] = warp(img[i], transform, output_shape=(image_size, image_size), order = 1, mode = 'edge')
+
+        return img
 
     @staticmethod
-    def add_blur(img):
+    def translate_image(img, label):
+        tx = np.random.choice(np.arange(10))
+        ty = np.random.choice(np.arange(10))
+        M = np.float32([[1, 0, tx], [0, 1, ty]])
+        rows, cols, _ = img.shape
+        dst = cv2.warpAffine(img, M, (cols, rows))
+        return dst
+
+    @staticmethod
+    def flip_image(img, label):
+        can_flip_horizontally = np.array([11, 12, 13, 15, 17, 18, 22, 26, 30, 35])
+        # Classes of signs that, when flipped vertically, should still be classified as the same class
+        can_flip_vertically = np.array([1, 5, 12, 15, 17])
+        # Classes of signs that, when flipped horizontally and then vertically,
+        #  should still be classified as the same class
+        can_flip_both = np.array([32, 40])
+
+        flipped = None
+
+        if label in can_flip_horizontally:
+            flipped = cv2.flip(img, 0)
+        elif label in can_flip_vertically:
+            flipped = cv2.flip(img, 1)
+        elif label in can_flip_both:
+            flipped = cv2.flip(img, np.random.choice([-1, 0, 1]))
+
+        return flipped
+
+    @staticmethod
+    def edge_detected(img, label):
+        slice = np.uint8(img)
+        return cv2.Canny(slice, 50, 150)
+
+    @staticmethod
+    def add_blur(img, label):
         return ndimage.gaussian_filter(img, sigma=random.randint(1, 4))
 
     @staticmethod
-    def perform_random_op(img):
-        ops = [Image.rotate_image, Image.edge_detected, Image.add_blur]
+    def perform_random_op(img, label):
+        ops = [Image.rotate_image, Image.edge_detected, Image.add_blur,
+               Image.flip_image, Image.translate_image]
+
         random_op = ops[random.randint(0, len(ops) - 1)]
-        return random_op(img)
+        new_img = random_op(img, label)
+        while new_img is None:
+            random_op = ops[random.randint(0, len(ops) - 1)]
+            new_img = random_op(img, label)
+
+        return new_img
+
+    @staticmethod
+    def insert_subimage(image, sub_image, y, x):
+        h, w, c = sub_image.shape
+        image[y:y+h, x:x+w, :]=sub_image
+        return image
+
 
 class Data:
     """
@@ -418,13 +494,55 @@ class Data:
         self.X_test = X_test
         self.y_test = y_test
 
-        self.dataframe = pd.DataFrame(y_train)
+        self.frame = pd.read_csv('signnames.csv')
 
-    def statistics(self):
+    def normalize_data(self):
+        # Normalize the RGB values to 0.0 to 1.0
+        self.X_train = self.X_train / 255.0
+        self.X_validation = self.X_validation / 255.0
+        self.X_test = self.X_test / 255.0
+
+    def get_signname(self, label_id):
+        return self.frame["SignName"][label_id]
+
+    def display_statistics(self):
         """
         Figure out statistics on the data using Pandas.
         """
-        print(self.dataframe.describe())
+        _, height, width, channel = self.X_train.shape
+        num_class = np.max(self.y_train) + 1
+
+        training_data = np.concatenate((self.X_train, self.X_validation))
+        training_labels = np.concatenate((self.y_train, self.y_validation))
+
+        num_sample = 10
+        results_image = 255.*np.ones(shape=(num_class*height, (num_sample + 2 + 22) * width, channel), dtype=np.float32)
+        for c in range(num_class):
+            indices = np.array(np.where(training_labels == c))[0]
+            random_idx = np.random.choice(indices)
+            label_image = training_data[random_idx]
+            Image.insert_subimage(results_image, label_image, c * height, 0)
+
+            #make mean
+            idx = list(np.where(training_labels == c)[0])
+            mean_image = np.average(training_data[idx], axis=0)
+            Image.insert_subimage(results_image, mean_image, c * height, width)
+
+            #make random sample
+            for n in range(num_sample):
+                sample_image = training_data[np.random.choice(idx)]
+                Image.insert_subimage(results_image, sample_image, c*height, (2 + n) * width)
+
+            #print summary
+            count=len(idx)
+            percentage = float(count)/float(len(training_data))
+            cv2.putText(results_image, '%02d:%-6s'%(c, self.get_signname(c)), ((2+num_sample)*width, int((c+0.7)*height)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+            cv2.putText(results_image, '[%4d]'%(count), ((2+num_sample+14)*width, int((c+0.7)*height)),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0, 0, 255), 1)
+            cv2.rectangle(results_image,((2+num_sample+16)*width, c*height),((2+num_sample+16)*width + round(percentage * 3000), (c+1)*height),(0, 0, 255), -1)
+
+
+        cv2.imwrite('augmented/data_summary.jpg',cv2.cvtColor(results_image, cv2.COLOR_BGR2RGB))
+
 
     def _augment_data_for_class(self, label_id, augmented_size):
         """
@@ -445,7 +563,7 @@ class Data:
             print_progress_bar(i, (augmented_size - total_data_len), prefix='Progress:', suffix='Complete', bar_length=50)
             random_idx = np.random.choice(indices)
             img = training_data[random_idx]
-            nimg = Image.perform_random_op(img=img)
+            nimg = Image.perform_random_op(img=img, label=random_idx)
 
             # Add this to the training dataset
             np.append(self.X_train, nimg)
@@ -464,6 +582,31 @@ class Data:
         # fig, ax = plt.subplots()
         # ax.bar(self.y_train, bincounts)
         # plt.show()
+
+    def visualize_training_data(self):
+        _, height, width, channel = self.X_train.shape
+        num_class = np.max(self.y_train) + 1
+
+        training_data = np.concatenate((self.X_train, self.X_validation))
+        training_labels = np.concatenate((self.y_train, self.y_validation))
+
+        for c in range(num_class):
+            indices = np.array(np.where(training_labels == c))[0]
+            total_cols = 50
+            total_rows = len(indices) / total_cols + 1
+
+            print(total_rows, total_cols, len(indices))
+
+            results_image = 255. * np.ones(shape=(total_rows * height, total_cols * width, channel),
+                                           dtype=np.float32)
+            for n in range(len(indices)):
+                sample_image = training_data[indices[n]]
+                Image.insert_subimage(results_image, sample_image, (n / total_cols) * height, (n % total_cols) * width)
+
+            filename = str(c) + "_" + self.get_signname(c) + ".png"
+            cv2.imwrite('augmented/' + filename, cv2.cvtColor(results_image, cv2.COLOR_BGR2RGB))
+            print("Wrote image")
+
 
     def augment_data(self, augmentation_factor):
         """
@@ -496,10 +639,6 @@ def load_traffic_sign_data(training_file, testing_file):
     X_train, y_train = train['features'], train['labels']
     X_test, y_test = test['features'], test['labels']
 
-    # Normalize the RGB values to 0.0 to 1.0
-    X_train = X_train / 255
-    X_test  = X_test / 255
-
     # Split the data into the training and validation steps.
     X_train, X_validation, y_train, y_validation = train_test_split(X_train, y_train, test_size=0.2, random_state=0)
 
@@ -519,6 +658,9 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--statistics", help="Display Statistics for input data"
+                        ,action="store_true")
+
+    parser.add_argument("--print_training", help="Print the Training Data"
                         ,action="store_true")
 
     parser.add_argument("--epochs", help="Number of Epochs to train the network for"
@@ -555,8 +697,14 @@ def main():
     print("Max Classified id: %s" % (max_classified_id))
 
     if args.statistics is True:
-        data.statistics()
+        data.display_statistics()
         return
+
+    if args.print_training is True:
+        data.visualize_training_data()
+        return
+
+    data.normalize_data()
 
     if not args.use_augmented_file:
         data.augment_data(args.augmentation_factor)

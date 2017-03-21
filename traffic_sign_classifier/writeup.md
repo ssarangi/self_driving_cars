@@ -16,6 +16,12 @@ The goals / steps of this project are the following:
 * Analyze the softmax probabilities of the new images
 * Summarize the results with a written report
 
+Random rotations between -10 and 10 degrees.
+Random translation between -10 and 10 pixels in any direction.
+Random zoom between factors of 1 and 1.3.
+Random shearing between -25 and 25 degrees.
+Bool choice to invert colors.
+Sobel edge detector applied to 1/4 of images.
 
 [//]: # (Image References)
 
