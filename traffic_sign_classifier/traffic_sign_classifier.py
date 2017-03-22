@@ -45,14 +45,15 @@ def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, bar_l
 
 
 def convolutional_layer(input, num_input_filters, num_output_filters, filter_shape,
-                        strides, padding, mean, stddev, name):
+                        strides, padding, mean, stddev, activation_func=None, name=""):
     conv_W = tf.Variable(tf.truncated_normal(shape=filter_shape+(num_input_filters, num_output_filters), mean=mean, stddev=stddev), name+"_weights")
     conv_b = tf.Variable(tf.zeros(num_output_filters), name=name+"_bias")
 
     conv = tf.nn.conv2d(input, conv_W, strides, padding) + conv_b
 
     # Activation Layer
-    conv = tf.nn.relu(conv)
+    if activation_func is not None:
+        conv = activation_func(conv)
 
     print(name + ": " + str(conv.get_shape().as_list()))
     return conv, num_output_filters
@@ -60,12 +61,13 @@ def convolutional_layer(input, num_input_filters, num_output_filters, filter_sha
 
 def fully_connected_layer(input, input_size, output_size, mean, stddev,
                           activation_func, dropout_prob, name):
-    fc_W = tf.Variable(tf.truncated_normal(shape=(input_size, output_size), mean=mean, stddev=stddev), name=name+"_W")
-    fc_b = tf.Variable(tf.zeros(output_size), name=name+"_b")
+    fc_W = tf.Variable(tf.truncated_normal(shape=(input_size, output_size),
+                       mean=mean, stddev=stddev), name=name + "_W")
+    fc_b = tf.Variable(tf.zeros(output_size), name=name + "_b")
     fc   = tf.matmul(input, fc_W) + fc_b
 
     if activation_func is not None:
-        fc = activation_func(fc)
+        fc = activation_func(fc, name=name + "_relu")
 
     if dropout_prob > 0.0:
         fc = tf.nn.dropout(fc, dropout_prob)
@@ -90,7 +92,7 @@ def simple_1conv_layer_nn(x, cfg):
     # Convolutional Layer 1: Input 32x32x3         Output = 26x26x12
     conv1, num_output_filters = convolutional_layer(x, num_input_filters=3, num_output_filters=12,
                                filter_shape=(7, 7), strides=[1,1,1,1], padding='VALID',
-                               mean=mu, stddev=sigma, name="conv2d_1")
+                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
 
     # Now use a fully connected Layer
     fc0 = flatten(conv1)
@@ -102,7 +104,7 @@ def simple_1conv_layer_nn(x, cfg):
     fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.0, "fc1")
 
     # Fully Connected: Input = 96               Output = 43
-    logits, output_size = fully_connected_layer(fc1, 96, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
+    logits, output_size = fully_connected_layer(fc1, output_size, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
 
     return logits
 
@@ -112,12 +114,12 @@ def simple_2conv_layer_nn(x, cfg):
     sigma = 0.1
 
     # Convolutional Layer 1: Input 32x32x3         Output = 26x26x12
-    conv1, num_output_filters = convolutional_layer(x, num_input_filters=3, num_output_filters=12,
+    conv1, num_output_filters = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=12,
                                filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
-                               mean=mu, stddev=sigma, name="conv2d_1")
+                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
 
     conv1 = maxpool2d_and_dropout(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                                  padding='VALID', dropout_prob=0.0)
+                                  padding='VALID', dropout_prob=0.2)
 
 
     conv2, num_output_filters = convolutional_layer(conv1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
@@ -125,7 +127,7 @@ def simple_2conv_layer_nn(x, cfg):
                                mean=mu, stddev=sigma, name="conv2d_1")
 
     conv2 = maxpool2d_and_dropout(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                                  padding='VALID', dropout_prob=0.0)
+                                  padding='VALID', dropout_prob=0.4)
 
     # Now use a fully connected Layer
     fc0 = flatten(conv1)
@@ -134,84 +136,96 @@ def simple_2conv_layer_nn(x, cfg):
 
     # Use 2 more layers
     # Fully Connected: Input = 192               Output = 96
-    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.0, "fc1")
+    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.5, "fc1")
 
     # Fully Connected: Input = 96               Output = 43
     logits, output_size = fully_connected_layer(fc1, 96, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
 
     return logits
 
-
-# AlexNet implementation
-def AlexNet(x, cfg):
-    # Hyper parameters
+def dense_net(x, cfg):
     mu = 0
     sigma = 0.1
 
-    # Convolutional Layer 1: Input 32x32x3         Output = 32x32x12
-    conv1, num_output_filters = convolutional_layer(x, num_input_filters=3, num_output_filters=12,
-                               filter_shape=(3, 3), strides=[1,1,1,1], padding='SAME',
-                               mean=mu, stddev=sigma, name="conv2d_1")
+    with tf.variable_scope('preprocess') as scope:
+        preprocess_conv3x3 = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=8,
+                            filter_shape=(3, 3), padding='SAME', mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv3x3")
 
-    # Convolutional Layer 2: Input 32x32x12         Output = 28x28x24
-    conv2, num_output_filters = convolutional_layer(conv1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
-                               mean=mu, stddev=sigma, name="conv2d_2")
-
-    # Convolutional Layer 3: Input 28x28x24         Output = 24x24x48
-    conv3, num_output_filters = convolutional_layer(conv2, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
-                               mean=mu, stddev=sigma, name="conv2d_3")
-
-    # Convolutional Layer 4: Input 24x24x48         Output = 16x16x96
-    conv4, num_output_filters = convolutional_layer(conv3, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(9, 9), strides=[1,1,1,1], padding='VALID',
-                               mean=mu, stddev=sigma, name="conv2d_4")
-
-    # Now lets add Convolutional Layers with downsampling
-    conv5, num_output_filters = convolutional_layer(conv4, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(3, 3), strides=[1,1,1,1], padding='SAME',
-                               mean=mu, stddev=sigma, name="conv2d_5")
-
-    # MaxPool Layer: Input 16x16x192                 Output = 16x16x384
-    conv5 = tf.nn.max_pool(conv5, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
-
-    # Convolutional Layer 6: Input 16x16x384         Output = 8x8x384
-    conv6, num_output_filters = convolutional_layer(conv5, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(11, 11), strides=[1,1,1,1], padding='SAME',
-                               mean=mu, stddev=sigma, name="conv2d_6")
-
-    # MaxPool Layer: Input 8x8x384                 Output = 4x4x384
-    conv6 = tf.nn.max_pool(conv6, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
-
-    # Fully Connected Layer
-    fc0 = flatten(conv6)
-
-    print(fc0.get_shape())
-
-    # Fully Connected: Input = 6144                Output = 3072
-    fc1, output_size = fully_connected_layer(fc0, 6144, 3072, mu, sigma, tf.nn.relu, 0.0, "fc1")
-
-    # Fully Connected: Input = 3072                Output = 1536
-    fc2, output_size = fully_connected_layer(fc1, 3072, 1536, mu, sigma, tf.nn.relu, 0.0, "fc2")
-
-    # Fully Connected: Input = 1536               Output = 768
-    fc3, output_size = fully_connected_layer(fc2, 1536, 768, mu, sigma, tf.nn.relu, 0.0, "fc3")
+        preprocess_conv1x1 = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=8,
+                            filter_shape=(1, 1), padding='SAME', mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv1x1")
 
 
-    # Fully Connected: Input = 768               Output = 384
-    fc4, output_size = fully_connected_layer(fc3, 768, 384, mu, sigma, tf.nn.relu, 0.0, "fc4")
 
-    # Fully Connected: Input = 384               Output = 192
-    fc5, output_size = fully_connected_layer(fc4, 384, 192, mu, sigma, tf.nn.relu, 0.0, "fc5")
-
-    # Fully Connected: Input = 192               Output = 96
-    fc6, output_size = fully_connected_layer(fc5, 192, 96, mu, sigma, tf.nn.relu, 0.0, "fc6")
-
-    # Fully Connected: Input = 96               Output = 43
-    logits, output_size = fully_connected_layer(fc6, 96, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
-
-    return logits
+# # AlexNet implementation
+# def AlexNet(x, cfg):
+#     # Hyper parameters
+#     mu = 0
+#     sigma = 0.1
+#
+#     # Convolutional Layer 1: Input 32x32x3         Output = 32x32x12
+#     conv1, num_output_filters = convolutional_layer(x, num_input_filters=3, num_output_filters=12,
+#                                filter_shape=(3, 3), strides=[1,1,1,1], padding='SAME',
+#                                mean=mu, stddev=sigma, name="conv2d_1")
+#
+#     # Convolutional Layer 2: Input 32x32x12         Output = 28x28x24
+#     conv2, num_output_filters = convolutional_layer(conv1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+#                                filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
+#                                mean=mu, stddev=sigma, name="conv2d_2")
+#
+#     # Convolutional Layer 3: Input 28x28x24         Output = 24x24x48
+#     conv3, num_output_filters = convolutional_layer(conv2, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+#                                filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
+#                                mean=mu, stddev=sigma, name="conv2d_3")
+#
+#     # Convolutional Layer 4: Input 24x24x48         Output = 16x16x96
+#     conv4, num_output_filters = convolutional_layer(conv3, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+#                                filter_shape=(9, 9), strides=[1,1,1,1], padding='VALID',
+#                                mean=mu, stddev=sigma, name="conv2d_4")
+#
+#     # Now lets add Convolutional Layers with downsampling
+#     conv5, num_output_filters = convolutional_layer(conv4, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+#                                filter_shape=(3, 3), strides=[1,1,1,1], padding='SAME',
+#                                mean=mu, stddev=sigma, name="conv2d_5")
+#
+#     # MaxPool Layer: Input 16x16x192                 Output = 16x16x384
+#     conv5 = tf.nn.max_pool(conv5, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+#
+#     # Convolutional Layer 6: Input 16x16x384         Output = 8x8x384
+#     conv6, num_output_filters = convolutional_layer(conv5, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+#                                filter_shape=(11, 11), strides=[1,1,1,1], padding='SAME',
+#                                mean=mu, stddev=sigma, name="conv2d_6")
+#
+#     # MaxPool Layer: Input 8x8x384                 Output = 4x4x384
+#     conv6 = tf.nn.max_pool(conv6, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+#
+#     # Fully Connected Layer
+#     fc0 = flatten(conv6)
+#
+#     print(fc0.get_shape())
+#
+#     # Fully Connected: Input = 6144                Output = 3072
+#     fc1, output_size = fully_connected_layer(fc0, 6144, 3072, mu, sigma, tf.nn.relu, 0.0, "fc1")
+#
+#     # Fully Connected: Input = 3072                Output = 1536
+#     fc2, output_size = fully_connected_layer(fc1, 3072, 1536, mu, sigma, tf.nn.relu, 0.0, "fc2")
+#
+#     # Fully Connected: Input = 1536               Output = 768
+#     fc3, output_size = fully_connected_layer(fc2, 1536, 768, mu, sigma, tf.nn.relu, 0.0, "fc3")
+#
+#
+#     # Fully Connected: Input = 768               Output = 384
+#     fc4, output_size = fully_connected_layer(fc3, 768, 384, mu, sigma, tf.nn.relu, 0.0, "fc4")
+#
+#     # Fully Connected: Input = 384               Output = 192
+#     fc5, output_size = fully_connected_layer(fc4, 384, 192, mu, sigma, tf.nn.relu, 0.0, "fc5")
+#
+#     # Fully Connected: Input = 192               Output = 96
+#     fc6, output_size = fully_connected_layer(fc5, 192, 96, mu, sigma, tf.nn.relu, 0.0, "fc6")
+#
+#     # Fully Connected: Input = 96               Output = 43
+#     logits, output_size = fully_connected_layer(fc6, 96, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
+#
+#     return logits
 
 
 # LeNet implementation
@@ -650,7 +664,7 @@ NETWORKS = {
     "simple_nn1": simple_1conv_layer_nn,
     "simple_nn2": simple_2conv_layer_nn,
     "lenet": LeNet,
-    "alexnet": AlexNet
+    # "alexnet": AlexNet
 }
 
 def main():
@@ -676,7 +690,7 @@ def main():
                         ,choices=list(NETWORKS.keys()), default="simple_nn1")
 
     parser.add_argument("--augmentation_factor", help="Specify the data augmentation multiplier. Eg. amplify all input training data by 5 times"
-                        ,type=int, default=1)
+                        ,type=int, default=0)
 
     parser.add_argument("--use_augmented_file", help="Use Augmented Training Data file"
                         ,action="store_true")
@@ -706,7 +720,7 @@ def main():
 
     data.normalize_data()
 
-    if not args.use_augmented_file:
+    if args.augmentation_factor > 0:
         data.augment_data(args.augmentation_factor)
 
     # Define the EPOCHS & BATCH_SIZE
