@@ -702,7 +702,7 @@ def load_traffic_sign_data(training_file, testing_file):
 NETWORKS = {
     "simple_nn1": simple_1conv_layer_nn,
     "simple_nn2": simple_2conv_layer_nn,
-    "lenet": LeNet,
+    "lenet": LeNet_new,
     # "alexnet": AlexNet
 }
 
