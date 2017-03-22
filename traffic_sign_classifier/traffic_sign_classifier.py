@@ -699,7 +699,7 @@ def main():
     args = parser.parse_args()
 
     if args.use_augmented_file:
-        data = load_traffic_sign_data('data/augmented.p', 'data/test.p')
+        data = load_traffic_sign_data('augmented/augmented.p', 'data/test.p')
     else:
         data = load_traffic_sign_data('data/train.p', 'data/test.p')
 
