@@ -588,7 +588,7 @@ class Data:
         train['features'] = self.X_train
         train['labels'] = self.y_train
 
-        f = open('data/augmented_data.p', 'wb')
+        f = open('augmented/augmented.p', 'wb')
         pickle.dump(train, f)
 
         # bincounts = np.bincount(self.y_train)
