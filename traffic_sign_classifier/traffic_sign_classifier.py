@@ -229,6 +229,44 @@ def dense_net(x, cfg):
 #     return logits
 
 
+def LeNet_new(x, cfg):
+    mu = 0
+    sigma = 0.1
+
+    # Convolutional Layer 1: Input 32x32x3         Output = 28x28x6
+    conv1, num_output_filters = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=6,
+                               filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
+                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
+
+    # Maxpool Layer : Input 28x28x6                Output = 14x14x6
+    maxpool1 = maxpool2d_and_dropout(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                     padding='VALID', dropout_prob=0.0)
+
+    # Convolutional Layer : Input 14x14x6          Output = 10x10x16
+    conv2, num_output_filters = convolutional_layer(maxpool1, num_input_filters=num_output_filters, num_output_filters=16,
+                               filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
+                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_2")
+
+    # Maxpool Layer : Input = 10x10x16             Output = 5x5x16
+    maxpool2 = maxpool2d_and_dropout(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                     padding='VALID', dropout_prob=0.0)
+
+    # Fully Connected Layer
+    fc0 = flatten(conv2)
+
+    shape = fc0.get_shape().as_list()[1]
+
+    # Layer 3: Fully Connected: Input = 400           Output = 120
+    fc1, shape = fully_connected_layer(fc0, shape, 120, mu, sigma, tf.nn.relu, 0.0, "fc1")
+
+    # Layer 4: Fully Connected: Input = 120           Output = 84
+    fc2, shape = fully_connected_layer(fc1, shape, 84, mu, sigma, tf.nn.relu, 0.0, "fc2")
+
+    # logits
+    logits, _ = fully_connected_layer(fc1, shape, cfg.MAX_LABELS, mu, sigma, tf.nn.relu, 0.0, "logits")
+
+    return logits
+
 # LeNet implementation
 def LeNet(x, cfg):
     # Hyper parameters
