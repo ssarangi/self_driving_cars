@@ -252,7 +252,7 @@ def LeNet_new(x, cfg):
                                      padding='VALID', dropout_prob=0.0)
 
     # Fully Connected Layer
-    fc0 = flatten(conv2)
+    fc0 = flatten(maxpool2)
 
     shape = fc0.get_shape().as_list()[1]
 
@@ -263,7 +263,7 @@ def LeNet_new(x, cfg):
     fc2, shape = fully_connected_layer(fc1, shape, 84, mu, sigma, tf.nn.relu, 0.0, "fc2")
 
     # logits
-    logits, _ = fully_connected_layer(fc1, shape, cfg.MAX_LABELS, mu, sigma, tf.nn.relu, 0.0, "logits")
+    logits, _ = fully_connected_layer(fc2, shape, cfg.MAX_LABELS, mu, sigma, tf.nn.relu, 0.0, "logits")
 
     return logits
 
