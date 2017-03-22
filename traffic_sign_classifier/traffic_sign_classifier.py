@@ -1,5 +1,6 @@
 import numpy as np
 
+import cv2
 import tensorflow as tf
 from tensorflow.contrib.layers import flatten
 
@@ -18,7 +19,6 @@ import random
 # import matplotlib.pyplot as plt
 
 from scipy import ndimage
-import cv2
 
 import sys
 def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, bar_length=100):
