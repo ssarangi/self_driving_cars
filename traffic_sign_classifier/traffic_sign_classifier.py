@@ -263,7 +263,7 @@ def LeNet_new(x, cfg):
     fc2, shape = fully_connected_layer(fc1, shape, 84, mu, sigma, tf.nn.relu, 0.0, "fc2")
 
     # logits
-    logits, _ = fully_connected_layer(fc2, shape, cfg.MAX_LABELS, mu, sigma, tf.nn.relu, 0.0, "logits")
+    logits, _ = fully_connected_layer(fc2, shape, cfg.MAX_LABELS, mu, sigma, None, 0.0, "logits")
 
     return logits
 
