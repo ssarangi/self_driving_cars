@@ -64,15 +64,16 @@ def convolutional_layer(input, num_input_filters, num_output_filters, filter_sha
 
 
 def fully_connected_layer(input, input_size, output_size, mean, stddev,
-                          activation_func, dropout_prob, name):
+                          activation_func, dropout_prob, use_batch_normalization, name):
     fc_W = tf.Variable(tf.truncated_normal(shape=(input_size, output_size),
                        mean=mean, stddev=stddev), name=name + "_W")
     fc_b = tf.Variable(tf.zeros(output_size), name=name + "_b")
     fc   = tf.matmul(input, fc_W) + fc_b
     
-    fc = tf.contrib.layers.batch_norm(fc, 
-                                      center=True, scale=True, 
-                                      is_training=True)
+    if use_batch_normalization:
+        fc = tf.contrib.layers.batch_norm(fc, 
+                                          center=True, scale=True, 
+                                          is_training=True)
     if activation_func is not None:
         fc = activation_func(fc, name=name + "_relu")
 
@@ -108,10 +109,10 @@ def simple_1conv_layer_nn(x, cfg):
 
     # Use 2 more layers
     # Fully Connected: Input = 192               Output = 96
-    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.0, "fc1")
+    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc1")
 
     # Fully Connected: Input = 96               Output = 43
-    logits, output_size = fully_connected_layer(fc1, output_size, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
+    logits, output_size = fully_connected_layer(fc1, output_size, 43, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="logits")
 
     return logits
 
@@ -143,10 +144,10 @@ def simple_2conv_layer_nn(x, cfg):
 
     # Use 2 more layers
     # Fully Connected: Input = 192               Output = 96
-    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.5, "fc1")
+    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.5, use_batch_normalization=cfg.IS_TRAINING, name="fc1")
 
     # Fully Connected: Input = 96               Output = 43
-    logits, output_size = fully_connected_layer(fc1, 96, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
+    logits, output_size = fully_connected_layer(fc1, 96, 43, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="logits")
 
     return logits
 
@@ -212,26 +213,26 @@ def AlexNet(x, cfg):
     print(fc0.get_shape())
 
     # Fully Connected: Input = 6144                Output = 3072
-    fc1, output_size = fully_connected_layer(fc0, 6144, 3072, mu, sigma, tf.nn.relu, 0.0, "fc1")
+    fc1, output_size = fully_connected_layer(fc0, 6144, 3072, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc1")
 
     # Fully Connected: Input = 3072                Output = 1536
-    fc2, output_size = fully_connected_layer(fc1, 3072, 1536, mu, sigma, tf.nn.relu, 0.0, "fc2")
+    fc2, output_size = fully_connected_layer(fc1, 3072, 1536, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc2")
 
     # Fully Connected: Input = 1536               Output = 768
-    fc3, output_size = fully_connected_layer(fc2, 1536, 768, mu, sigma, tf.nn.relu, 0.0, "fc3")
+    fc3, output_size = fully_connected_layer(fc2, 1536, 768, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc3")
 
 
     # Fully Connected: Input = 768               Output = 384
-    fc4, output_size = fully_connected_layer(fc3, 768, 384, mu, sigma, tf.nn.relu, 0.0, "fc4")
+    fc4, output_size = fully_connected_layer(fc3, 768, 384, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc4")
 
     # Fully Connected: Input = 384               Output = 192
-    fc5, output_size = fully_connected_layer(fc4, 384, 192, mu, sigma, tf.nn.relu, 0.0, "fc5")
+    fc5, output_size = fully_connected_layer(fc4, 384, 192, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc5")
 
     # Fully Connected: Input = 192               Output = 96
-    fc6, output_size = fully_connected_layer(fc5, 192, 96, mu, sigma, tf.nn.relu, 0.0, "fc6")
+    fc6, output_size = fully_connected_layer(fc5, 192, 96, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc6")
 
     # Fully Connected: Input = 96               Output = 43
-    logits, output_size = fully_connected_layer(fc6, 96, 43, mu, sigma, tf.nn.relu, 0.0, "logits")
+    logits, output_size = fully_connected_layer(fc6, 96, 43, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="logits")
 
     return logits
 
@@ -264,13 +265,13 @@ def LeNet_new(x, cfg):
     shape = fc0.get_shape().as_list()[1]
 
     # Layer 3: Fully Connected: Input = 400           Output = 120
-    fc1, shape = fully_connected_layer(fc0, shape, 120, mu, sigma, tf.nn.relu, 0.0, "fc1")
+    fc1, shape = fully_connected_layer(fc0, shape, 120, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc1")
 
     # Layer 4: Fully Connected: Input = 120           Output = 84
-    fc2, shape = fully_connected_layer(fc1, shape, 84, mu, sigma, tf.nn.relu, 0.0, "fc2")
+    fc2, shape = fully_connected_layer(fc1, shape, 84, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc2")
 
     # logits
-    logits, _ = fully_connected_layer(fc2, shape, cfg.MAX_LABELS, mu, sigma, None, 0.0, "logits")
+    logits, _ = fully_connected_layer(fc2, shape, cfg.MAX_LABELS, mu, sigma, None, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="logits")
 
     return logits
 
@@ -348,6 +349,7 @@ def LeNet(x, cfg):
 
 
 def train(cfg):
+    cfg.IS_TRAINING = True
     global NETWORKS
 
     x = tf.placeholder(tf.float32, (None,) + cfg.INPUT_LAYER_SHAPE, name='X')
@@ -379,6 +381,7 @@ def train(cfg):
 
 
 def evaluate(X_data, y_data, tensor_ops, cfg):
+    cfg.IS_TRAINING = False
     num_examples = len(X_data)
     total_accuracy = 0
     sess = tf.get_default_session()
@@ -421,6 +424,7 @@ class NNConfig:
         self.LEARNING_RATE = LEARNING_RATE
         self.SAVE_MODEL = SAVE_MODEL
         self.NN_NAME = NN_NAME
+        self.IS_TRAINING = False
 
         assert(len(INPUT_LAYER_SHAPE) == 3)
 
