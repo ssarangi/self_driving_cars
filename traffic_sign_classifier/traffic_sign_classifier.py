@@ -17,11 +17,20 @@ import argparse
 
 import pandas as pd
 import random
-# import matplotlib.pyplot as plt
+import matplotlib
+import matplotlib.pyplot as plt
 
 from scipy import ndimage
 
+matplotlib.style.use('ggplot')
+
 import sys
+def print_header(txt):
+    print("-" * 100)
+    print(txt)
+    print("-" * 100)
+
+
 def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, bar_length=100):
     """
     Call in a loop to create terminal progress bar
@@ -52,8 +61,8 @@ def convolutional_layer(input, num_input_filters, num_output_filters, filter_sha
 
     conv = tf.nn.conv2d(input, conv_W, strides, padding) + conv_b
 
-    fc = tf.contrib.layers.batch_norm(conv, 
-                                      center=True, scale=True, 
+    fc = tf.contrib.layers.batch_norm(conv,
+                                      center=True, scale=True,
                                       is_training=True)
     # Activation Layer
     if activation_func is not None:
@@ -69,10 +78,10 @@ def fully_connected_layer(input, input_size, output_size, mean, stddev,
                        mean=mean, stddev=stddev), name=name + "_W")
     fc_b = tf.Variable(tf.zeros(output_size), name=name + "_b")
     fc   = tf.matmul(input, fc_W) + fc_b
-    
+
     if use_batch_normalization:
-        fc = tf.contrib.layers.batch_norm(fc, 
-                                          center=True, scale=True, 
+        fc = tf.contrib.layers.batch_norm(fc,
+                                          center=True, scale=True,
                                           is_training=True)
     if activation_func is not None:
         fc = activation_func(fc, name=name + "_relu")
@@ -166,7 +175,6 @@ def dense_net(x, cfg):
 
 # AlexNet implementation
 def AlexNet(x, cfg):
-    print("I am training the Alex Net")
     # Hyper parameters
     mu = 0
     sigma = 0.1
@@ -349,6 +357,7 @@ def LeNet(x, cfg):
 
 
 def train(cfg):
+    print_header("Training " + cfg.NN_NAME)
     cfg.IS_TRAINING = True
     global NETWORKS
 
@@ -362,11 +371,11 @@ def train(cfg):
     cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
                     logits=logits, labels=one_hot_y)
 
-    vars   = tf.trainable_variables() 
-    # lossL2 = tf.add_n([ tf.nn.l2_loss(v) for v in vars ]) * 0.001
-    
-    loss_operation = tf.reduce_mean(cross_entropy) #+ lossL2
-    
+    vars   = tf.trainable_variables()
+    lossL2 = tf.add_n([ tf.nn.l2_loss(v) for v in vars ]) * 0.001
+
+    loss_operation = tf.reduce_mean(cross_entropy) + lossL2
+
     optimizer = tf.train.AdamOptimizer(learning_rate=cfg.LEARNING_RATE)
     training_op = optimizer.minimize(loss_operation)
 
@@ -376,7 +385,7 @@ def train(cfg):
     accuracy_op = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
     saver = tf.train.Saver(), training_op, accuracy_op
 
-    tensor_ops = TensorOps(x, y, training_op, accuracy_op, saver)
+    tensor_ops = TensorOps(x, y, training_op, accuracy_op, loss_operation, saver)
     return tensor_ops
 
 
@@ -389,12 +398,12 @@ def evaluate(X_data, y_data, tensor_ops, cfg):
         batch_x = X_data[offset: offset + cfg.BATCH_SIZE]
         batch_y = y_data[offset: offset + cfg.BATCH_SIZE]
 
-        accuracy = sess.run(tensor_ops.accuracy_op,
+        accuracy, loss = sess.run([tensor_ops.accuracy_op, tensor_ops.loss_op],
                             feed_dict={tensor_ops.x: batch_x, tensor_ops.y: batch_y})
 
         total_accuracy += (accuracy * len(batch_x))
 
-    return total_accuracy / num_examples
+    return total_accuracy / num_examples, loss
 
 
 # Class Definitions.
@@ -436,7 +445,7 @@ class TensorOps:
     This class stores the tensor ops which are the end layers which we use for
     training.
     """
-    def __init__(self, x, y, training_op, accuracy_op, saver):
+    def __init__(self, x, y, training_op, accuracy_op, loss_op, saver):
         """
         x: Tensor for the input class
         y: Tensor for the output class
@@ -448,6 +457,7 @@ class TensorOps:
         self.y = y
         self.training_op = training_op
         self.accuracy_op = accuracy_op
+        self.loss_op = loss_op
         self.saver = saver
 
 
@@ -612,19 +622,18 @@ class Data:
         cv2.imwrite('augmented/data_summary.jpg',cv2.cvtColor(results_image, cv2.COLOR_BGR2RGB))
 
 
-    def _augment_data_for_class(self, label_id, augmented_size):
+    def _augment_data_for_class(self, label_id, augmented_size, training_labels, training_data):
         """
         Internal method which will augment the data size for the specified label.
         It will calculate the initial size and augment it to its size.
         """
-        print("Augmenting class: %s" % label_id)
-
-        training_labels = np.concatenate((self.y_train, self.y_validation))
-        training_data   = np.concatenate((self.X_train, self.X_validation))
+        print("\nAugmenting class: %s" % label_id)
 
         # find all the indices for the label id
         indices = np.array(np.where(training_labels == label_id))[0]
         total_data_len = len(indices)
+
+        print("Label %s has %s images. Augmenting by %s images to %s images" % (label_id, total_data_len, (augmented_size - total_data_len), augmented_size))
 
         # Find a random ID from the indices and perform a random operation
         for i in range(0, (augmented_size - total_data_len)):
@@ -634,22 +643,11 @@ class Data:
             nimg = Image.perform_random_op(img=img, label=random_idx)
 
             # Add this to the training dataset
-            np.append(self.X_train, nimg)
-            np.append(self.y_train, label_id)
+            np.append(training_data, nimg)
+            np.append(training_labels, label_id)
 
-        # Now save the augmented data
-        train = {}
-        train['features'] = self.X_train
-        train['labels'] = self.y_train
+        return training_data, training_labels
 
-        f = open('augmented/augmented.p', 'wb')
-        pickle.dump(train, f)
-
-        # bincounts = np.bincount(self.y_train)
-        # bincounts = bincounts[self.y_train]
-        # fig, ax = plt.subplots()
-        # ax.bar(self.y_train, bincounts)
-        # plt.show()
 
     def visualize_training_data(self):
         _, height, width, channel = self.X_train.shape
@@ -683,18 +681,28 @@ class Data:
         """
         # Find the class label which has the highest images. We will decide the
         # augmentation size based on that multipled by the augmentation factor
-        bincounts = np.bincount(self.y_train)
+
+        training_labels = np.concatenate((self.y_train, self.y_validation))
+        training_data   = np.concatenate((self.X_train, self.X_validation))
+
+        bincounts = np.bincount(training_labels)
         label_counts = bincounts.shape[0]
 
         max_label_count = np.max(bincounts)
-        max_label_idx = np.argmax(bincounts)
         augmentation_data_size = max_label_count * augmentation_factor
 
+        print_header("Summary for Training Data for Augmentation")
+        print("Max Label Count: %s" % max_label_count)
+        print("Augmented Data Size: %s" % augmentation_data_size)
+
         for i in range(0, label_counts):
-            self._augment_data_for_class(i, augmentation_data_size)
+            training_data, training_labels = self._augment_data_for_class(i, augmentation_data_size, training_labels, training_data)
 
         self.X_train = shuffle(self.X_train)
         self.y_train = shuffle(self.y_train)
+
+        f = open('augmented/augmented.p', 'wb')
+        pickle.dump(train, f)
 
 # Data Loading and processing part
 def load_traffic_sign_data(training_file, testing_file):
@@ -718,8 +726,28 @@ NETWORKS = {
     "simple_nn1": simple_1conv_layer_nn,
     "simple_nn2": simple_2conv_layer_nn,
     "lenet": LeNet_new,
-    "alexnet": AlexNet
+    # "alexnet": AlexNet
 }
+
+def visualize_data(df):
+    """
+    Takes in a Pandas Dataframe and then slices and dices it to create graphs
+    """
+    fig, (ax1, ax2) = plt.subplots(nrows = 2, ncols = 1)
+    ax1.set_xlabel('epochs')
+    ax1.set_ylabel('validation accuracy')
+
+    ax2.set_xlabel('epochs')
+    ax2.set_ylabel('loss')
+
+    legend1 = ax1.legend(loc='upper center', shadow=True)
+    legend2 = ax2.legend(loc='upper center', shadow=True)
+
+    for i, group in df.groupby('network name'):
+        group.plot(x='epochs', y='validation accuracy', ax=ax1, label=i, marker='o', linewidth=2)
+        group.plot(x='epochs', y='loss', ax=ax2, label=i, marker='o', linewidth=2)
+
+    plt.show()
 
 def main():
     global NETWORKS
@@ -741,7 +769,7 @@ def main():
                         ,type=float, default=0.001)
 
     parser.add_argument("--network", help="Specify which Neural Network to execute"
-                        ,choices=list(NETWORKS.keys()), default="simple_nn1")
+                        ,choices=list(NETWORKS.keys()) + ["all"], default="simple_nn1")
 
     parser.add_argument("--augmentation_factor", help="Specify the data augmentation multiplier. Eg. amplify all input training data by 5 times"
                         ,type=int, default=0)
@@ -750,6 +778,12 @@ def main():
                         ,action="store_true")
 
     args = parser.parse_args()
+
+    networks = []
+    if args.network == "all":
+        networks = NETWORKS.keys()
+    else:
+        networks = [args.network]
 
     if args.use_augmented_file:
         data = load_traffic_sign_data('augmented/augmented.p', 'data/test.p')
@@ -775,39 +809,58 @@ def main():
     data.normalize_data()
 
     if args.augmentation_factor > 0:
+        print_header("Starting Data Augmentation....")
         data.augment_data(args.augmentation_factor)
+        print_header("Data Augmentation Complete.... Will Exit")
+        return
 
-    # Define the EPOCHS & BATCH_SIZE
-    cfg = NNConfig(EPOCHS=args.epochs,
-                   BATCH_SIZE=args.batch_size,
-                   MAX_LABEL_SIZE=max_classified_id,
-                   INPUT_LAYER_SHAPE=data.X_train[0].shape,
-                   LEARNING_RATE=args.learning_rate,
-                   SAVE_MODEL=False,
-                   NN_NAME=args.network)
+    dataframes = []
+    for network in networks:
+        df = pd.DataFrame(columns=('network name', 'epochs', 'validation accuracy', 'loss'))
 
-    tensor_ops = train(cfg)
+        # Define the EPOCHS & BATCH_SIZE
+        cfg = NNConfig(EPOCHS=args.epochs,
+                       BATCH_SIZE=args.batch_size,
+                       MAX_LABEL_SIZE=max_classified_id,
+                       INPUT_LAYER_SHAPE=data.X_train[0].shape,
+                       LEARNING_RATE=args.learning_rate,
+                       SAVE_MODEL=False,
+                       NN_NAME=network)
+        tensor_ops = train(cfg)
 
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
 
-        print("Training...\n")
-        for i in range(cfg.EPOCHS):
-            X_train, y_train = shuffle(data.X_train, data.y_train)
-            for offset in range(0, len(X_train), cfg.BATCH_SIZE):
-                end = offset + cfg.BATCH_SIZE
-                batch_x, batch_y = X_train[offset:end], y_train[offset:end]
-                sess.run(tensor_ops.training_op,
-                         feed_dict={tensor_ops.x: batch_x, tensor_ops.y: batch_y})
+            print("Training...\n")
+            for i in range(cfg.EPOCHS):
+                X_train, y_train = shuffle(data.X_train, data.y_train)
+                for offset in range(0, len(X_train), cfg.BATCH_SIZE):
+                    end = offset + cfg.BATCH_SIZE
+                    batch_x, batch_y = X_train[offset:end], y_train[offset:end]
+                    sess.run(tensor_ops.training_op,
+                             feed_dict={tensor_ops.x: batch_x, tensor_ops.y: batch_y})
 
-            validation_accuracy = evaluate(data.X_validation, data.y_validation,
-                                           tensor_ops, cfg)
-            print("EPOCH {} ...".format(i+1))
-            print("Validation Accuracy = {:.3f}\n".format(validation_accuracy))
+                validation_accuracy, validation_loss = evaluate(data.X_validation, data.y_validation,
+                                                                tensor_ops, cfg)
+                print("EPOCH {} ...".format(i+1))
+                print("Validation Accuracy = {:.3f}\n".format(validation_accuracy))
+                df.loc[i] = [network, i+1, "{:2.1f}".format(validation_accuracy * 100.0), validation_loss]
 
-        if cfg.SAVE_MODEL is True:
-            saver.save(sess, "./lenet")
-            print("Model Saved")
+
+            test_accuracy, test_loss = evaluate(data.X_test, data.y_test, tensor_ops, cfg)
+            print("Test Accuracy = {:.3f}\n".format(test_accuracy))
+            df['test accuracy'] = "{:.3f}".format(test_accuracy)
+            dataframes.append(df)
+
+            if cfg.SAVE_MODEL is True:
+                saver.save(sess, "./lenet")
+                print("Model Saved")
+
+    df = pd.concat(dataframes)
+    print(df)
+    df.to_csv('final_data.csv')
+    df = pd.DataFrame.from_csv('final_data.csv')
+    visualize_data(df)
 
 if __name__ == "__main__":
     main()

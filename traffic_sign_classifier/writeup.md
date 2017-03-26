@@ -1,12 +1,69 @@
-# Traffic Sign Recognition
-
-## Writeup Template
-
-### You can use this file as a template for your writeup if you want to submit it as a markdown file, but feel free to use some other method and submit a pdf if you prefer.
-
----
-
 **Build a Traffic Sign Recognition Project**
+
+An important part of self driving cars is the detection of traffic signs. Cars need to automatically detect
+traffic signs and appropriately take actions. However, traffic sign detection is a difficult problem because of the absence of any standard whatsoever. Different countries have different traffic signs and they mean different
+things. Weather plays an important role in the presence traffic signs. A very good example of this would be a place which gets heavy snow vs a place which is hot and has deserts around it. Traffic rules and signs around such places are different and hence need to be identified differently.
+
+This was the 2nd project for the Udacity's Self Driving Car Nanodegree. The problem set provided training and testing data for traffic signs.
+
+For the purpose of this project, Udacity made it a little easier and provided a zip file with test, validation & training data. The zip file contained 3 different pickle files for each.
+* train.p - Training Data with 34799 images of each 32x32x3
+* valid.p - Validation Data with 4410 images of each 32x32x3
+* test.p - Testing Data with 12630 images of each 32x32x3
+
+Each of the **Labels** are denoted by a number between 1 & 42. These labels correspond to sign names which are
+
+| ClassId | SignName |
+|---------|:---------|
+|0        |Speed limit (20km/h) |
+|1        |                             Speed limit (30km/h)
+|2        |                             Speed limit (50km/h)
+|3        |                             Speed limit (60km/h)
+|4        |                             Speed limit (70km/h)
+|5        |                             Speed limit (80km/h)
+|6        |                      End of speed limit (80km/h)
+|7        |                            Speed limit (100km/h)
+|8        |                            Speed limit (120km/h)
+|9        |                                       No passing
+|10       |     No passing for vehicles over 3.5 metric tons
+|11       |            Right-of-way at the next intersection
+|12       |                                    Priority road
+|13       |                                            Yield
+|14       |                                             Stop
+|15       |                                      No vehicles
+|16       |         Vehicles over 3.5 metric tons prohibited
+|17       |                                         No entry
+|18       |                                  General caution
+|19       |                      Dangerous curve to the left
+|20       |                     Dangerous curve to the right
+|21       |                                     Double curve
+|22       |                                       Bumpy road
+|23       |                                    Slippery road
+|24       |                        Road narrows on the right
+|25       |                                        Road work
+|26       |                                  Traffic signals
+|27       |                                      Pedestrians
+|28       |                                Children crossing
+|29       |                                Bicycles crossing
+|30       |                               Beware of ice/snow
+|31       |                            Wild animals crossing
+|32       |              End of all speed and passing limits
+|33       |                                 Turn right ahead
+|34       |                                  Turn left ahead
+|35       |                                       Ahead only
+|36       |                             Go straight or right
+|37       |                              Go straight or left
+|38       |                                       Keep right
+|39       |                                        Keep left
+|40       |                             Roundabout mandatory
+|41       |                                End of no passing
+|42       | End of no passing by vehicles over 3.5 metric ...
+
+# Input Data
+The input data is not balanced across the labels which could affect the accuracy of the neural net.
+[image]:(images/label_distribution.png) "Label Distribution"
+
+
 
 The goals / steps of this project are the following:
 * Load the data set (see below for links to the project data set)
