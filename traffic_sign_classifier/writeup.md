@@ -71,6 +71,13 @@ Each of the **Labels** are denoted by a number between 1 & 42. These labels corr
 [image8]: ./examples/placeholder.png "Traffic Sign 5"
 [labeldistribution]: ./images/label_distribution.png "Label Distribution"
 [originalsampleimg]: ./images/original_sample_img.png "Original Sample Image from Training Data"
+[edgedetectedimg]: ./images/edge_detected.png "Edge Detected Image"
+[flippedimg]: ./images/flip_image.png "Flipped Image"
+[rotateimg]: ./images/rotate_image.png "Rotated Image"
+[translateimg]: ./images/translate_image.png "Translated Image"
+[0]: ./images/0.png "20 km/hr speed Limit"
+[simplenn1]: ./images/simple_nn1.svg "Simple NN1 SVG"
+[simplenn2]: ./images/simple_nn2.svg "Simple NN2 SVG"
 
 # Input Data
 ![alt text][labeldistribution]
@@ -92,13 +99,93 @@ augmentation could be performed which I wasn't sure could be handled with ImgAug
 
 ## Techniques
 * Random rotations between -10 and 10 degrees.
+![alt text][rotateimg]
 * Random translation between -10 and 10 pixels in any direction.
-* Random zoom between factors of 1 and 1.3.
-* Random shearing between -25 and 25 degrees.
-* Bool choice to invert colors.
-* Sobel edge detector applied to 1/4 of images.
+![alt text][translateimg]
+* Random flipping horizontally or vertically or both depending on sign. There are restrictions on this since flipping a traffic sign could change it's meaning. Hence, labels have been classified on whether they can be flipped or not.
+![alt text][flippedimg]
+* Canny Edge detection
+![alt text][edgedetectedimg]
 
+## Example Dataset after Proprocessing
+![alt text][0]
 
+## Code
+To handle this preprocessing, there are 2 classes in the code. The Data class and the Image class. The data class is responsible for handling the data loading as well as for augmenting the dataset.
+```python
+class Data:
+    """
+    Encode the different data so its easier to pass them around
+    """
+    def __init__(self, X_train, y_train, X_validation, y_validation, X_test,
+                 y_test):
+        self.X_train = X_train
+        self.y_train = y_train
+        self.X_validation = X_validation
+        self.y_validation = y_validation
+        self.X_test = X_test
+        self.y_test = y_test
+
+        self.frame = pd.read_csv('signnames.csv')
+
+    def augment_data(self, augmentation_factor):
+        """
+        Augment the input data with more data so that we can make all the labels
+        uniform
+        """
+        # Find the class label which has the highest images. We will decide the
+        # augmentation size based on that multipled by the augmentation factor
+        pool = multiprocessing.Pool(multiprocessing.cpu_count())
+
+        training_labels = np.concatenate((self.y_train, self.y_validation))
+        training_data   = np.concatenate((self.X_train, self.X_validation))
+
+        bincounts = np.bincount(training_labels)
+        label_counts = bincounts.shape[0]
+
+        max_label_count = np.max(bincounts)
+        augmentation_data_size = max_label_count * augmentation_factor
+
+        print_header("Summary for Training Data for Augmentation")
+        print("Max Label Count: %s" % max_label_count)
+        print("Augmented Data Size: %s" % augmentation_data_size)
+
+        args = []
+        for i in range(0, label_counts):
+            if i in training_labels:
+                args.append((i, augmentation_data_size, training_labels, training_data))
+
+        results = pool.starmap(self._augment_data_for_class, args)
+        pool.close()
+        pool.join()
+
+        features, labels = zip(*results)
+
+        features = np.array(features)
+        labels = np.array(labels)
+
+        augmented_features = np.concatenate(features, axis=0)
+        augmented_labels = np.concatenate(labels, axis=0)
+        all_features = np.concatenate(np.array([training_data, augmented_features]), axis=0)
+        all_labels = np.concatenate(np.array([training_labels, augmented_labels]), axis=0)
+
+        all_features, all_labels = shuffle(all_features, all_labels)
+
+        train = {}
+        train['features'] = all_features
+        train['labels'] = all_labels
+
+        f = open('augmented/augmented.p', 'wb')
+        pickle.dump(train, f, protocol=4)
+```
+
+# Network architecture
+
+In this project I considered 4 different architectures.
+* Simple NN1
+* Simple NN2
+* LeNet
+* MultiLayer NN
 
 The goals / steps of this project are the following:
 * Load the data set (see below for links to the project data set)
@@ -108,98 +195,94 @@ The goals / steps of this project are the following:
 * Analyze the softmax probabilities of the new images
 * Summarize the results with a written report
 
+## Input Data Preprocessing
+Apart from using image augmentation, I didn't use any kind of preprocessing like converting to grayscale because it didn't help with the training.
+
+## Results with & without Training Data Augmentation
 
 
-
-
-## Rubric Points
-###Here I will consider the [rubric points](https://review.udacity.com/#!/rubrics/481/view) individually and describe how I addressed each point in my implementation.  
-
----
-###Writeup / README
-
-####1. Provide a Writeup / README that includes all the rubric points and how you addressed each one. You can submit your writeup as markdown or pdf. You can use this template as a guide for writing the report. The submission includes the project code.
-
-You're reading it! and here is a link to my [project code](https://github.com/udacity/CarND-Traffic-Sign-Classifier-Project/blob/master/Traffic_Sign_Classifier.ipynb)
-
-###Data Set Summary & Exploration
-
-####1. Provide a basic summary of the data set and identify where in your code the summary was done. In the code, the analysis should be done using python, numpy and/or pandas methods rather than hardcoding results manually.
-
-The code for this step is contained in the second code cell of the IPython notebook.  
-
-I used the pandas library to calculate summary statistics of the traffic
-signs data set:
-
-* The size of training set is ?
-* The size of test set is ?
-* The shape of a traffic sign image is ?
-* The number of unique classes/labels in the data set is ?
-
-####2. Include an exploratory visualization of the dataset and identify where the code is in your code file.
-
-The code for this step is contained in the third code cell of the IPython notebook.  
-
-Here is an exploratory visualization of the data set. It is a bar chart showing how the data ...
-
-![alt text][image1]
-
-###Design and Test a Model Architecture
-
-####1. Describe how, and identify where in your code, you preprocessed the image data. What tecniques were chosen and why did you choose these techniques? Consider including images showing the output of each preprocessing technique. Pre-processing refers to techniques such as converting to grayscale, normalization, etc.
-
-The code for this step is contained in the fourth code cell of the IPython notebook.
-
-As a first step, I decided to convert the images to grayscale because ...
-
-Here is an example of a traffic sign image before and after grayscaling.
-
-![alt text][image2]
-
-As a last step, I normalized the image data because ...
-
-####2. Describe how, and identify where in your code, you set up training, validation and testing data. How much data was in each set? Explain what techniques were used to split the data into these sets. (OPTIONAL: As described in the "Stand Out Suggestions" part of the rubric, if you generated additional data for training, describe why you decided to generate additional data, how you generated the data, identify where in your code, and provide example images of the additional data)
-
-The code for splitting the data into training and validation sets is contained in the fifth code cell of the IPython notebook.  
-
-To cross validate my model, I randomly split the training data into a training set and validation set. I did this by ...
-
-My final training set had X number of images. My validation set and test set had Y and Z number of images.
-
-The sixth code cell of the IPython notebook contains the code for augmenting the data set. I decided to generate additional data because ... To add more data to the the data set, I used the following techniques because ...
-
-Here is an example of an original image and an augmented image:
-
-![alt text][image3]
-
-The difference between the original data set and the augmented data set is the following ...
 
 
 ####3. Describe, and identify where in your code, what your final model architecture looks like including model type, layers, layer sizes, connectivity, etc.) Consider including a diagram and/or table describing the final model.
 
 The code for my final model is located in the seventh cell of the ipython notebook.
 
+## Simple NN1
+![alt text][simplenn1]
+| Layer         		    |     Description	        					          |
+|:---------------------:|:-------------------------------------------:|
+| Input         		    | 32x32x3 RGB image   							          |
+| Convolution 7x7     	| 1x1 stride, VALID padding, outputs 26x26x12, 12 output Filters	|
+| RELU					        |												                      |
+| Flatten	          	  |                               				      |
+| Fully connected       | 96 Outputs   									              |
+| Batch Normalization   |                                             |
+| Logits Softmax        | 43 Outputs   									              |
+
+## Simple NN2
+![alt text][simplenn2]
+
+| Layer         		    |     Description	        					          |
+|:---------------------:|:-------------------------------------------:|
+| Input         		    | 32x32x3 RGB image   							          |
+| Convolution 5x5     	| 1x1 stride, SAME padding, outputs 26x26x12, 12 output Filters	|
+| RELU					        |												                      |
+| Maxpool & Dropout     |	2x2 maxpool, 2x2 stride, dropout=0.2, VALID |
+| Convolution 7x7     	| 1x1 stride, SAME padding, 24 output Filters	|
+| RELU					        |												                      |
+| Maxpool & Dropout     |	2x2 maxpool, 2x2 stride, dropout=0.4, VALID |
+| Flatten	          	  |                               				      |
+| Fully connected       | 96 Outputs   									              |
+| Batch Normalization   |                                             |
+| Logits Softmax        | 43 Outputs   									              |
+
+## Lenet
+
+## AlexNet
+![alt text][alexnet]
+
 My final model consisted of the following layers:
 
-| Layer         		|     Description	        					|
-|:---------------------:|:---------------------------------------------:|
-| Input         		| 32x32x3 RGB image   							|
-| Convolution 3x3     	| 1x1 stride, same padding, outputs 32x32x64 	|
-| RELU					|												|
-| Max pooling	      	| 2x2 stride,  outputs 16x16x64 				|
-| Convolution 3x3	    | etc.      									|
-| Fully connected		| etc.        									|
-| Softmax				| etc.        									|
-|						|												|
-|						|												|
+| Layer         		    |     Description	        					          |
+|:---------------------:|:-------------------------------------------:|
+| Input         		    | 32x32x3 RGB image   							          |
+| Convolution 3x3     	| 1x1 stride, SAME padding, 12 output Filters	|
+| RELU					        |												                      |
+| Convolution 5x5     	| 1x1 stride, VALID padding, Outputs 28x28x24, 24 output Filters	|
+| RELU					        |												                      |
+| Convolution 5x5     	| 1x1 stride, VALID padding, Outputs 24x24x48, 48 output Filters	|
+| RELU					        |												                      |
+| Convolution 9x9     	| 1x1 stride, SAME padding, Outputs 16x16x96, 96 output Filters	|
+| RELU					        |												                      |
+| Convolution 3x3     	| 1x1 stride, SAME padding, Outputs 16x16x192, 192 output Filters	|
+| RELU					        |												                      |
+| Maxpool               |	2x2 maxpool, 2x2 stride, SAME, Outputs 16x16x384               |
+| Convolution 11x11   	| 1x1 stride, SAME padding, Outputs 8x8x384, 384 output Filters	|
+| RELU					        |												                      |
+| Maxpool               |	2x2 maxpool, 2x2 stride, SAME, Outputs 4x4x384               |
+| Flatten	          	  | 6144 Outputs                             				      |
+| Fully connected       | 3072 Outputs   									              |
+| Batch Normalization   |                                             |
+| Fully connected       | 1536 Outputs   									              |
+| Batch Normalization   |                                             |
+| Fully connected       | 768 Outputs   									              |
+| Batch Normalization   |                                             |
+| Fully connected       | 384 Outputs   									              |
+| Batch Normalization   |                                             |
+| Fully connected       | 192 Outputs   									              |
+| Batch Normalization   |                                             |
+| Fully connected       | 96 Outputs   									              |
+| Batch Normalization   |                                             |
+| Logits Softmax        | 43 Outputs   									              |
 
 
 
-####4. Describe how, and identify where in your code, you trained your model. The discussion can include the type of optimizer, the batch size, number of epochs and any hyperparameters such as learning rate.
+#### 4. Describe how, and identify where in your code, you trained your model. The discussion can include the type of optimizer, the batch size, number of epochs and any hyperparameters such as learning rate.
 
-The code for training the model is located in the eigth cell of the ipython notebook.
+For all the networks, AdamOptimizer was used since that is the most popular optimizer and gave decent results.
+Along with this, I also added L2 Loss to the operation. This improved the validation accuracy by about 2%
 
-To train the model, I used an ....
+
 
 ####5. Describe the approach taken for finding a solution. Include in the discussion the results on the training, validation and test sets and where in the code these were calculated. Your approach may have been an iterative process, in which case, outline the steps you took to get to the final solution and why you chose those steps. Perhaps your solution involved an already well known implementation or architecture. In this case, discuss why you think the architecture is suitable for the current problem.
 
@@ -267,3 +350,20 @@ For the first image, the model is relatively sure that this is a stop sign (prob
 
 
 For the second image ...
+
+# Links & References
+- Block diagrams built with http://interactive.blockdiag.com/
+
+# Appendix
+
+- Simple NN1
+blockdiag {
+  Conv1-7x7x12 -> BatchNormalization -> Activation -> Flatten -> FullyConnected-96 -> Logits;
+}
+
+- Simple NN2
+blockdiag {
+  Conv1-5x5x12 -> BatchNormalization1 -> Activation1 -> Maxpool1 -> Dropout-0.2 -> Conv2-7x7x24 -> BatchNormalization2 -> Activation2 -> Maxpool2 -> Dropout-0.4 -> Flatten -> FullyConnected-96 -> Logits;
+}
+
+- Lenet:

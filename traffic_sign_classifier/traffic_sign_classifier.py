@@ -359,7 +359,7 @@ def LeNet(x, cfg):
 
 
 def train(cfg):
-    print_header("Training " + cfg.NN_NAME)
+    print_header("Training " + cfg.NN_NAME + " --> Use Augmented Data: " + str(cfg.USE_AUGMENTED_FILE))
     cfg.IS_TRAINING = True
     global NETWORKS
 
@@ -415,7 +415,7 @@ class NNConfig:
     one spot so its easier to run it.
     """
     def __init__(self, EPOCHS, BATCH_SIZE, MAX_LABEL_SIZE, INPUT_LAYER_SHAPE,
-                 LEARNING_RATE, SAVE_MODEL, NN_NAME):
+                 LEARNING_RATE, SAVE_MODEL, NN_NAME, USE_AUGMENTED_FILE):
         """
         EPOCHS: How many times are we running this network
         BATCH_SIZE: How many inputs do we consider while running this data
@@ -436,6 +436,7 @@ class NNConfig:
         self.SAVE_MODEL = SAVE_MODEL
         self.NN_NAME = NN_NAME
         self.IS_TRAINING = False
+        self.USE_AUGMENTED_FILE = USE_AUGMENTED_FILE
 
         assert(len(INPUT_LAYER_SHAPE) == 3)
 
@@ -471,7 +472,10 @@ class Image:
         # affect the meaning of the sign itself.
         # Choosing -10 to 10 degrees
         angle = np.random.choice(np.random.uniform(-10,10,100))
-        return ndimage.rotate(img, angle)
+        dst = ndimage.rotate(img, angle)
+        height, width = img.shape[:2]
+        dst = cv2.resize(dst, (width, height))
+        return dst
 
     @staticmethod
     def translate_image(img, label):
@@ -494,9 +498,9 @@ class Image:
         flipped = None
 
         if label in can_flip_horizontally:
-            flipped = cv2.flip(img, 0)
-        elif label in can_flip_vertically:
             flipped = cv2.flip(img, 1)
+        elif label in can_flip_vertically:
+            flipped = cv2.flip(img, 0)
         elif label in can_flip_both:
             flipped = cv2.flip(img, np.random.choice([-1, 0, 1]))
 
@@ -505,18 +509,18 @@ class Image:
     @staticmethod
     def edge_detected(img, label):
         slice = np.uint8(img)
-        return cv2.Canny(slice, 50, 150)
-
-    @staticmethod
-    def add_blur(img, label):
-        return ndimage.gaussian_filter(img, sigma=random.randint(1, 4))
+        canny = cv2.Canny(slice, 50, 150)
+        backtorgb = cv2.cvtColor(canny, cv2.COLOR_GRAY2RGB)
+        return backtorgb
 
     @staticmethod
     def perform_random_op(img, label):
-        ops = [Image.rotate_image, Image.edge_detected, Image.add_blur,
-               Image.flip_image, Image.translate_image]
+        ops = [Image.edge_detected, Image.flip_image,
+               Image.translate_image, Image.rotate_image,
+              ]
 
         random_op = ops[random.randint(0, len(ops) - 1)]
+        print(str(random_op))
         new_img = random_op(img, label)
         while new_img is None:
             random_op = ops[random.randint(0, len(ops) - 1)]
@@ -593,6 +597,28 @@ class Data:
 
         cv2.imwrite('augmented/data_summary.jpg',cv2.cvtColor(results_image, cv2.COLOR_BGR2RGB))
 
+    def visualize_training_data(self):
+        _, height, width, channel = self.X_train.shape
+        num_class = np.max(self.y_train) + 1
+
+        training_data = np.concatenate((self.X_train, self.X_validation))
+        training_labels = np.concatenate((self.y_train, self.y_validation))
+
+        for c in range(0, num_class):
+            print("Class %s" % c)
+            indices = np.array(np.where(training_labels == c))[0]
+            total_cols = 50
+            total_rows = len(indices) / total_cols + 1
+
+            results_image = 255. * np.ones(shape=(total_rows * height, total_cols * width, channel),
+                                           dtype=np.float32)
+            for n in range(len(indices)):
+                sample_image = training_data[indices[n]]
+                Image.insert_subimage(results_image, sample_image, (n / total_cols) * height, (n % total_cols) * width)
+
+            filename = str(c) + ".png"
+            cv2.imwrite('augmented/' + filename, cv2.cvtColor(results_image, cv2.COLOR_BGR2RGB))
+            print("Wrote image: %s" % filename)
 
     def _augment_data_for_class(self, label_id, augmented_size, training_labels, training_data):
         """
@@ -604,6 +630,9 @@ class Data:
         # find all the indices for the label id
         indices = np.array(np.where(training_labels == label_id))[0]
         total_data_len = len(indices)
+
+        if indices.shape == 0:
+            return np.array([]), np.array([])
 
         print("Label %s has %s images. Augmenting by %s images to %s images" % (label_id, total_data_len, (augmented_size - total_data_len), augmented_size))
 
@@ -620,33 +649,10 @@ class Data:
             new_training_data.append(nimg)
             new_training_label.append(label_id)
 
+        new_training_data = np.array(new_training_data)
+        new_training_label = np.array(new_training_label)
 
-        return np.array(training_data), np.array(training_labels)
-
-    def visualize_training_data(self):
-        _, height, width, channel = self.X_train.shape
-        num_class = np.max(self.y_train) + 1
-
-        training_data = np.concatenate((self.X_train, self.X_validation))
-        training_labels = np.concatenate((self.y_train, self.y_validation))
-
-        for c in range(num_class):
-            indices = np.array(np.where(training_labels == c))[0]
-            total_cols = 50
-            total_rows = len(indices) / total_cols + 1
-
-            print(total_rows, total_cols, len(indices))
-
-            results_image = 255. * np.ones(shape=(total_rows * height, total_cols * width, channel),
-                                           dtype=np.float32)
-            for n in range(len(indices)):
-                sample_image = training_data[indices[n]]
-                Image.insert_subimage(results_image, sample_image, (n / total_cols) * height, (n % total_cols) * width)
-
-            filename = str(c) + "_" + self.get_signname(c) + ".png"
-            cv2.imwrite('augmented/' + filename, cv2.cvtColor(results_image, cv2.COLOR_BGR2RGB))
-            print("Wrote image")
-
+        return new_training_data, new_training_label
 
     def augment_data(self, augmentation_factor):
         """
@@ -672,22 +678,31 @@ class Data:
 
         args = []
         for i in range(0, label_counts):
-            args.append((i, augmentation_data_size, training_labels, training_data))
+            if i in training_labels:
+                args.append((i, augmentation_data_size, training_labels, training_data))
 
         results = pool.starmap(self._augment_data_for_class, args)
-        augmented_data = np.concatenate(results, axis=0)
-        self.X_train = np.concatenate([self.X_train, augmented_data], axis=0)
-        self.y_train = np.concatenate([self.y_train, augmented_data], axis=0)
+        pool.close()
+        pool.join()
 
-        self.X_train = shuffle(self.X_train)
-        self.y_train = shuffle(self.y_train)
+        features, labels = zip(*results)
+
+        features = np.array(features)
+        labels = np.array(labels)
+
+        augmented_features = np.concatenate(features, axis=0)
+        augmented_labels = np.concatenate(labels, axis=0)
+        all_features = np.concatenate(np.array([training_data, augmented_features]), axis=0)
+        all_labels = np.concatenate(np.array([training_labels, augmented_labels]), axis=0)
+
+        all_features, all_labels = shuffle(all_features, all_labels)
 
         train = {}
-        train['features'] = self.X_train
-        train['labels'] = self.y_train
+        train['features'] = all_features
+        train['labels'] = all_labels
 
         f = open('augmented/augmented.p', 'wb')
-        pickle.dump(train, f)
+        pickle.dump(train, f, protocol=4)
 
 # Data Loading and processing part
 def load_traffic_sign_data(training_file, testing_file):
@@ -711,7 +726,7 @@ NETWORKS = {
     "simple_nn1": simple_1conv_layer_nn,
     "simple_nn2": simple_2conv_layer_nn,
     "lenet": LeNet_new,
-    # "alexnet": AlexNet
+    "alexnet": AlexNet
 }
 
 def visualize_data(df):
@@ -791,14 +806,13 @@ def main():
         data.visualize_training_data()
         return
 
-    data.normalize_data()
-
     if args.augmentation_factor > 0:
         print_header("Starting Data Augmentation....")
         data.augment_data(args.augmentation_factor)
         print_header("Data Augmentation Complete.... Will Exit")
         return
 
+    # data.normalize_data()
     dataframes = []
     for network in networks:
         df = pd.DataFrame(columns=('network name', 'epochs', 'validation accuracy', 'loss'))
@@ -810,7 +824,8 @@ def main():
                        INPUT_LAYER_SHAPE=data.X_train[0].shape,
                        LEARNING_RATE=args.learning_rate,
                        SAVE_MODEL=False,
-                       NN_NAME=network)
+                       NN_NAME=network,
+                       USE_AUGMENTED_FILE=args.use_augmented_file)
         tensor_ops = train(cfg)
 
         with tf.Session() as sess:
@@ -822,7 +837,7 @@ def main():
                 for offset in range(0, len(X_train), cfg.BATCH_SIZE):
                     end = offset + cfg.BATCH_SIZE
                     batch_x, batch_y = X_train[offset:end], y_train[offset:end]
-                    sess.run(tensor_ops.training_op,
+                    batch_res, batch_loss = sess.run([tensor_ops.training_op, tensor_ops.loss_op],
                              feed_dict={tensor_ops.x: batch_x, tensor_ops.y: batch_y})
 
                 validation_accuracy, validation_loss = evaluate(data.X_validation, data.y_validation,
