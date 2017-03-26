@@ -78,6 +78,11 @@ Each of the **Labels** are denoted by a number between 1 & 42. These labels corr
 [0]: ./images/0.png "20 km/hr speed Limit"
 [simplenn1]: ./images/simple_nn1.svg "Simple NN1 SVG"
 [simplenn2]: ./images/simple_nn2.svg "Simple NN2 SVG"
+[final_test_cross]: ./images/german_traffic_sign/cross.jpg "Image Cross"
+[final_test_speedlimit50]: ./images/german_traffic_sign/speed_limit_50.jpg "Image Cross"
+[final_test_stop]: ./images/german_traffic_sign/stop.jpg "Image Cross"
+[final_test_walk]: ./images/german_traffic_sign/walk.jpg "Image Cross"
+[final_test_yield]: ./images/german_traffic_sign/yield.jpg "Image Cross"
 
 # Input Data
 ![alt text][labeldistribution]
@@ -282,9 +287,7 @@ My final model consisted of the following layers:
 For all the networks, AdamOptimizer was used since that is the most popular optimizer and gave decent results.
 Along with this, I also added L2 Loss to the operation. This improved the validation accuracy by about 2%
 
-
-
-####5. Describe the approach taken for finding a solution. Include in the discussion the results on the training, validation and test sets and where in the code these were calculated. Your approach may have been an iterative process, in which case, outline the steps you took to get to the final solution and why you chose those steps. Perhaps your solution involved an already well known implementation or architecture. In this case, discuss why you think the architecture is suitable for the current problem.
+#### 5. Describe the approach taken for finding a solution. Include in the discussion the results on the training, validation and test sets and where in the code these were calculated. Your approach may have been an iterative process, in which case, outline the steps you took to get to the final solution and why you chose those steps. Perhaps your solution involved an already well known implementation or architecture. In this case, discuss why you think the architecture is suitable for the current problem.
 
 The code for calculating the accuracy of the model is located in the ninth cell of the Ipython notebook.
 
@@ -306,18 +309,13 @@ If a well known architecture was chosen:
 * How does the final model's accuracy on the training, validation and test set provide evidence that the model is working well?
 
 
-###Test a Model on New Images
-
-####1. Choose five German traffic signs found on the web and provide them in the report. For each image, discuss what quality or qualities might be difficult to classify.
+### Real Dataset
 
 Here are five German traffic signs that I found on the web:
 
-![alt text][image4] ![alt text][image5] ![alt text][image6]
-![alt text][image7] ![alt text][image8]
+![alt text][final_test_walk] ![alt text][final_test_stop] ![alt text][final_test_yield]![alt text][final_test_cross] ![alt text][final_test_speedlimit50]
 
-The first image might be difficult to classify because ...
-
-####2. Discuss the model's predictions on these new traffic signs and compare the results to predicting on the test set. Identify where in your code predictions were made. At a minimum, discuss what the predictions were, the accuracy on these new predictions, and compare the accuracy to the accuracy on the test set (OPTIONAL: Discuss the results in more detail as described in the "Stand Out Suggestions" part of the rubric).
+#### 2. Discuss the model's predictions on these new traffic signs and compare the results to predicting on the test set. Identify where in your code predictions were made. At a minimum, discuss what the predictions were, the accuracy on these new predictions, and compare the accuracy to the accuracy on the test set (OPTIONAL: Discuss the results in more detail as described in the "Stand Out Suggestions" part of the rubric).
 
 The code for making predictions on my final model is located in the tenth cell of the Ipython notebook.
 

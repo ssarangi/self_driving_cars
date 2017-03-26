@@ -162,21 +162,8 @@ def simple_2conv_layer_nn(x, cfg):
 
     return logits
 
-def dense_net(x, cfg):
-    mu = 0
-    sigma = 0.1
-
-    with tf.variable_scope('preprocess') as scope:
-        preprocess_conv3x3 = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=8,
-                            filter_shape=(3, 3), padding='SAME', mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv3x3")
-
-        preprocess_conv1x1 = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=8,
-                            filter_shape=(1, 1), padding='SAME', mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv1x1")
-
-
-
-# AlexNet implementation
-def AlexNet(x, cfg):
+# A Deep Network implementation
+def DeepNet(x, cfg):
     # Hyper parameters
     mu = 0
     sigma = 0.1
@@ -247,7 +234,7 @@ def AlexNet(x, cfg):
     return logits
 
 
-def LeNet_new(x, cfg):
+def LeNet(x, cfg):
     mu = 0
     sigma = 0.1
 
@@ -286,7 +273,7 @@ def LeNet_new(x, cfg):
     return logits
 
 # LeNet implementation
-def LeNet(x, cfg):
+def LeNet_Orig(x, cfg):
     # Hyper parameters
     mu = 0
     sigma = 0.1
@@ -725,8 +712,8 @@ def load_traffic_sign_data(training_file, testing_file):
 NETWORKS = {
     "simple_nn1": simple_1conv_layer_nn,
     "simple_nn2": simple_2conv_layer_nn,
-    "lenet": LeNet_new,
-    "alexnet": AlexNet
+    "lenet": LeNet,
+    "deepnet": DeepNet
 }
 
 def visualize_data(df):
