@@ -59,9 +59,6 @@ Each of the **Labels** are denoted by a number between 1 & 42. These labels corr
 |41       |                                End of no passing
 |42       | End of no passing by vehicles over 3.5 metric ...
 
-# Input Data
-The input data is not balanced across the labels which could affect the accuracy of the neural net.
-
 [//]: # (Image References)
 
 [image1]: ./examples/visualization.jpg "Visualization"
@@ -74,7 +71,13 @@ The input data is not balanced across the labels which could affect the accuracy
 [image8]: ./examples/placeholder.png "Traffic Sign 5"
 [labeldistribution]: ./images/label_distribution.png "Label Distribution"
 
+# Input Data
+The input data is not balanced across the labels which could affect the accuracy of the neural net.
+So for this reason I augmented the input data so that it could provide a uniform set of training data.
+
+
 ![alt text][labeldistribution]
+
 
 
 The goals / steps of this project are the following:
