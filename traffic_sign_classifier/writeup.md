@@ -61,8 +61,20 @@ Each of the **Labels** are denoted by a number between 1 & 42. These labels corr
 
 # Input Data
 The input data is not balanced across the labels which could affect the accuracy of the neural net.
-[image]:(images/label_distribution.png) "Label Distribution"
 
+[//]: # (Image References)
+
+[image1]: ./examples/visualization.jpg "Visualization"
+[image2]: ./examples/grayscale.jpg "Grayscaling"
+[image3]: ./examples/random_noise.jpg "Random Noise"
+[image4]: ./examples/placeholder.png "Traffic Sign 1"
+[image5]: ./examples/placeholder.png "Traffic Sign 2"
+[image6]: ./examples/placeholder.png "Traffic Sign 3"
+[image7]: ./examples/placeholder.png "Traffic Sign 4"
+[image8]: ./examples/placeholder.png "Traffic Sign 5"
+[labeldistribution]: ./images/label_distribution.png "Label Distribution"
+
+![alt text][labeldistribution]
 
 
 The goals / steps of this project are the following:
@@ -80,16 +92,7 @@ Random shearing between -25 and 25 degrees.
 Bool choice to invert colors.
 Sobel edge detector applied to 1/4 of images.
 
-[//]: # (Image References)
 
-[image1]: ./examples/visualization.jpg "Visualization"
-[image2]: ./examples/grayscale.jpg "Grayscaling"
-[image3]: ./examples/random_noise.jpg "Random Noise"
-[image4]: ./examples/placeholder.png "Traffic Sign 1"
-[image5]: ./examples/placeholder.png "Traffic Sign 2"
-[image6]: ./examples/placeholder.png "Traffic Sign 3"
-[image7]: ./examples/placeholder.png "Traffic Sign 4"
-[image8]: ./examples/placeholder.png "Traffic Sign 5"
 
 ## Rubric Points
 ###Here I will consider the [rubric points](https://review.udacity.com/#!/rubrics/481/view) individually and describe how I addressed each point in my implementation.  
