@@ -83,6 +83,7 @@ Each of the **Labels** are denoted by a number between 1 & 42. These labels corr
 [final_test_stop]: ./images/german_traffic_sign/stop.jpg "Image Cross"
 [final_test_walk]: ./images/german_traffic_sign/walk.jpg "Image Cross"
 [final_test_yield]: ./images/german_traffic_sign/yield.jpg "Image Cross"
+[150_epochs]: ./images/150_epochs.png "150 Epochs training on all 4 networks"
 
 # Input Data
 ![alt text][labeldistribution]
@@ -97,7 +98,8 @@ library which can be used to augment the training data. [ImgAug Link](https://gi
 
 However, I wrote my own code using a mix of opencv and skimage libraries to have a better
 control over the whole process. Also there were restrictions with what kinds of image
-augmentation could be performed which I wasn't sure could be handled with ImgAug.
+augmentation could be performed which I wasn't sure could be handled with ImgAug. Generating such a huge dataset is computationally expensive and hence I used python's multiprocessing to speed up that process.
+8 threads were launched to parallelize the operation across the 8 cores I had available on the cpu to near utilize 100% of cpu time. This brought down the time from about 20 hrs on a Macbook Pro 15" to about 7 mins on a desktop with core i7 & 32 gb memory.
 
 ### Original Image
 ![alt text][originalsampleimg]
@@ -186,7 +188,7 @@ class Data:
 
 # Network architecture
 
-In this project I considered 4 different architectures.
+In this project I considered 4 different architectures. The reason for using 4 architectures was to see how different architectures behave under such a huge training set.  I used a GTX1080 FTI edition to do the training on my local desktop.
 * Simple NN1
 * Simple NN2
 * LeNet
@@ -205,6 +207,7 @@ Apart from using image augmentation, I didn't use any kind of preprocessing like
 
 ## Results with & without Training Data Augmentation
 
+I used scikit-learn's training testing split function to generate the training as well as the validation set data.
 
 
 
@@ -295,6 +298,9 @@ My final model results were:
 * training set accuracy of ?
 * validation set accuracy of ?
 * test set accuracy of ?
+
+The graphs below show the performance of 4 networks as well as their loss functions.
+![alt text][150_epochs]
 
 If an iterative approach was chosen:
 * What was the first architecture that was tried and why was it chosen?
