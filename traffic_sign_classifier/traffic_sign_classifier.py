@@ -374,7 +374,7 @@ def train(cfg):
     accuracy_op = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
     saver = tf.train.Saver(), training_op, accuracy_op
 
-    tensor_ops = TensorOps(x, y, training_op, accuracy_op, loss_operation, saver)
+    tensor_ops = TensorOps(x, y, training_op, accuracy_op, loss_operation, cross_entropy, saver)
     return tensor_ops
 
 
@@ -435,7 +435,7 @@ class TensorOps:
     This class stores the tensor ops which are the end layers which we use for
     training.
     """
-    def __init__(self, x, y, training_op, accuracy_op, loss_op, saver):
+    def __init__(self, x, y, training_op, accuracy_op, loss_op, cross_entropy, saver):
         """
         x: Tensor for the input class
         y: Tensor for the output class
@@ -448,6 +448,7 @@ class TensorOps:
         self.training_op = training_op
         self.accuracy_op = accuracy_op
         self.loss_op = loss_op
+        self.cross_entropy = cross_entropy
         self.saver = saver
 
 
