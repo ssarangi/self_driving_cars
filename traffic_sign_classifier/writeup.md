@@ -70,13 +70,33 @@ Each of the **Labels** are denoted by a number between 1 & 42. These labels corr
 [image7]: ./examples/placeholder.png "Traffic Sign 4"
 [image8]: ./examples/placeholder.png "Traffic Sign 5"
 [labeldistribution]: ./images/label_distribution.png "Label Distribution"
+[originalsampleimg]: ./images/original_sample_img.png "Original Sample Image from Training Data"
 
 # Input Data
-The input data is not balanced across the labels which could affect the accuracy of the neural net.
+![alt text][labeldistribution]
+
+The input data is not balanced across the labels which could affect the accuracy of the neural net. As can be
+seen from the graph above, some labels have a larger amount of data than others.
+
 So for this reason I augmented the input data so that it could provide a uniform set of training data.
 
+There are multiple techniques which can be used to augment the data and there is even a
+library which can be used to augment the training data. [ImgAug Link](https://github.com/aleju/imgaug)
 
-![alt text][labeldistribution]
+However, I wrote my own code using a mix of opencv and skimage libraries to have a better
+control over the whole process. Also there were restrictions with what kinds of image
+augmentation could be performed which I wasn't sure could be handled with ImgAug.
+
+### Original Image
+![alt text][originalsampleimg]
+
+## Techniques
+* Random rotations between -10 and 10 degrees.
+* Random translation between -10 and 10 pixels in any direction.
+* Random zoom between factors of 1 and 1.3.
+* Random shearing between -25 and 25 degrees.
+* Bool choice to invert colors.
+* Sobel edge detector applied to 1/4 of images.
 
 
 
@@ -88,12 +108,7 @@ The goals / steps of this project are the following:
 * Analyze the softmax probabilities of the new images
 * Summarize the results with a written report
 
-Random rotations between -10 and 10 degrees.
-Random translation between -10 and 10 pixels in any direction.
-Random zoom between factors of 1 and 1.3.
-Random shearing between -25 and 25 degrees.
-Bool choice to invert colors.
-Sobel edge detector applied to 1/4 of images.
+
 
 
 

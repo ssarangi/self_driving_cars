@@ -22,6 +22,8 @@ import matplotlib.pyplot as plt
 
 from scipy import ndimage
 
+import multiprocessing
+
 matplotlib.style.use('ggplot')
 
 import sys
@@ -468,38 +470,8 @@ class Image:
         # Rotation has to be done within a very narrow range since it could
         # affect the meaning of the sign itself.
         # Choosing -10 to 10 degrees
-        angle = np.random.choice(np.random.normal(0, 1.0, 1000))
+        angle = np.random.choice(np.random.uniform(-10,10,100))
         return ndimage.rotate(img, angle)
-
-    @staticmethod
-    def apply_projection_transform(img, label):
-        image_size = img.shape[1]
-        d = image_size
-        for i in range(img.shape[0]):
-            tl_top = random.uniform(-d, d)     # Top left corner, top margin
-            tl_left = random.uniform(-d, d)    # Top left corner, left margin
-            bl_bottom = random.uniform(-d, d)  # Bottom left corner, bottom margin
-            bl_left = random.uniform(-d, d)    # Bottom left corner, left margin
-            tr_top = random.uniform(-d, d)     # Top right corner, top margin
-            tr_right = random.uniform(-d, d)   # Top right corner, right margin
-            br_bottom = random.uniform(-d, d)  # Bottom right corner, bottom margin
-            br_right = random.uniform(-d, d)   # Bottom right corner, right margin
-
-            transform = ProjectiveTransform()
-            transform.estimate(np.array((
-                    (tl_left, tl_top),
-                    (bl_left, image_size - bl_bottom),
-                    (image_size - br_right, image_size - br_bottom),
-                    (image_size - tr_right, tr_top)
-                )), np.array((
-                    (0, 0),
-                    (0, image_size),
-                    (image_size, image_size),
-                    (image_size, 0)
-                )))
-            img[i] = warp(img[i], transform, output_shape=(image_size, image_size), order = 1, mode = 'edge')
-
-        return img
 
     @staticmethod
     def translate_image(img, label):
@@ -635,6 +607,8 @@ class Data:
 
         print("Label %s has %s images. Augmenting by %s images to %s images" % (label_id, total_data_len, (augmented_size - total_data_len), augmented_size))
 
+        new_training_data = []
+        new_training_label = []
         # Find a random ID from the indices and perform a random operation
         for i in range(0, (augmented_size - total_data_len)):
             print_progress_bar(i, (augmented_size - total_data_len), prefix='Progress:', suffix='Complete', bar_length=50)
@@ -643,11 +617,11 @@ class Data:
             nimg = Image.perform_random_op(img=img, label=random_idx)
 
             # Add this to the training dataset
-            np.append(training_data, nimg)
-            np.append(training_labels, label_id)
+            new_training_data.append(nimg)
+            new_training_label.append(label_id)
 
-        return training_data, training_labels
 
+        return np.array(training_data), np.array(training_labels)
 
     def visualize_training_data(self):
         _, height, width, channel = self.X_train.shape
@@ -681,6 +655,7 @@ class Data:
         """
         # Find the class label which has the highest images. We will decide the
         # augmentation size based on that multipled by the augmentation factor
+        pool = multiprocessing.Pool(multiprocessing.cpu_count())
 
         training_labels = np.concatenate((self.y_train, self.y_validation))
         training_data   = np.concatenate((self.X_train, self.X_validation))
@@ -695,11 +670,21 @@ class Data:
         print("Max Label Count: %s" % max_label_count)
         print("Augmented Data Size: %s" % augmentation_data_size)
 
+        args = []
         for i in range(0, label_counts):
-            training_data, training_labels = self._augment_data_for_class(i, augmentation_data_size, training_labels, training_data)
+            args.append((i, augmentation_data_size, training_labels, training_data))
+
+        results = pool.starmap(self._augment_data_for_class, args)
+        augmented_data = np.concatenate(results, axis=0)
+        self.X_train = np.concatenate([self.X_train, augmented_data], axis=0)
+        self.y_train = np.concatenate([self.y_train, augmented_data], axis=0)
 
         self.X_train = shuffle(self.X_train)
         self.y_train = shuffle(self.y_train)
+
+        train = {}
+        train['features'] = self.X_train
+        train['labels'] = self.y_train
 
         f = open('augmented/augmented.p', 'wb')
         pickle.dump(train, f)
@@ -771,7 +756,7 @@ def main():
     parser.add_argument("--network", help="Specify which Neural Network to execute"
                         ,choices=list(NETWORKS.keys()) + ["all"], default="simple_nn1")
 
-    parser.add_argument("--augmentation_factor", help="Specify the data augmentation multiplier. Eg. amplify all input training data by 5 times"
+    parser.add_argument("--augmentation_factor", help="Specify the data augmentation multiplier. Eg. amplify all input training data by 3 times"
                         ,type=int, default=0)
 
     parser.add_argument("--use_augmented_file", help="Use Augmented Training Data file"
