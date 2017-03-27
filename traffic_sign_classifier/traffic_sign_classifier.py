@@ -432,7 +432,7 @@ def LeNet(x, dropout_keep_prob, cfg):
                                                     mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
 
     # Maxpool Layer : Input 28x28x6                Output = 14x14x6
-    maxpool1 = maxpool2d(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
+    maxpool1 = maxpool2d(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID', name="maxpool1")
 
     # Convolutional Layer : Input 14x14x6          Output = 10x10x16
     conv2, num_output_filters = convolutional_layer(maxpool1, num_input_filters=num_output_filters, num_output_filters=16,
@@ -440,7 +440,7 @@ def LeNet(x, dropout_keep_prob, cfg):
                                                     mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_2")
 
     # Maxpool Layer : Input = 10x10x16             Output = 5x5x16
-    maxpool2 = maxpool2d(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
+    maxpool2 = maxpool2d(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID', name="maxpool2")
 
     # Fully Connected Layer
     fc0 = flatten(maxpool2)
@@ -525,10 +525,10 @@ def simple_2conv_layer_nn(x, dropout_keep_prob, cfg):
                                                     filter_shape=(7, 7), strides=[1,1,1,1], padding='SAME',
                                                     mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
 
-    conv2 = maxpool2d(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
+    maxpool1 = maxpool2d(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID', name="maxpool1")
 
     # Now use a fully connected Layer
-    fc0 = flatten(conv1)
+    fc0 = flatten(maxpool1)
 
     shape = fc0.get_shape().as_list()[1]
 
@@ -543,7 +543,7 @@ def simple_2conv_layer_nn(x, dropout_keep_prob, cfg):
 
     return logits
 
-def NewNet(x, dropout_keep_prob, cfg):
+def DeepNetMergeLayers(x, dropout_keep_prob, cfg):
     mu = 0
     sigma = 0.1
 
@@ -621,8 +621,12 @@ def DeepNet(x, dropout_keep_prob, cfg):
     mu = 0
     sigma = 0.1
 
+    one_by_one, num_output_filters = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=3,
+                                                        filter_shape=(1, 1), strides=[1,1,1,1], padding='SAME',
+                                                        mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
+
     # Convolutional Layer 1: Input 32x32x3         Output = 32x32x12
-    conv1, num_output_filters = convolutional_layer(x, num_input_filters=3, num_output_filters=12,
+    conv1, num_output_filters = convolutional_layer(one_by_one, num_input_filters=3, num_output_filters=12,
                                                     filter_shape=(3, 3), strides=[1,1,1,1], padding='SAME',
                                                     mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
 
@@ -647,18 +651,18 @@ def DeepNet(x, dropout_keep_prob, cfg):
                                                     mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_5")
 
     # MaxPool Layer: Input 16x16x192                 Output = 16x16x384
-    conv5 = tf.nn.max_pool(conv5, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+    maxpool1 = tf.nn.max_pool(conv5, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name="maxpool1")
 
     # Convolutional Layer 6: Input 16x16x384         Output = 8x8x384
-    conv6, num_output_filters = convolutional_layer(conv5, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+    conv6, num_output_filters = convolutional_layer(maxpool1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
                                                     filter_shape=(11, 11), strides=[1,1,1,1], padding='SAME',
                                                     mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_6")
 
     # MaxPool Layer: Input 8x8x384                 Output = 4x4x384
-    conv6 = tf.nn.max_pool(conv6, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+    maxpool2 = tf.nn.max_pool(conv6, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name="maxpool2")
 
     # Fully Connected Layer
-    fc0 = flatten(conv6)
+    fc0 = flatten(maxpool2)
 
     # Fully Connected: Input = 6144                Output = 3072
     fc1, output_size = fully_connected_layer(fc0, 6144, 3072, mu, sigma, tf.nn.relu, dropout_keep_prob, name="fc1")
@@ -719,11 +723,10 @@ def train(cfg):
     tensor_ops = TensorOps(x, y, dropout_keep_prob, training_op, accuracy_op, loss_operation, logits, saver)
     return tensor_ops
 
-def evaluate(X_data, y_data, tensor_ops, cfg):
+def evaluate(sess, X_data, y_data, tensor_ops, cfg):
     cfg.IS_TRAINING = False
     num_examples = len(X_data)
     total_accuracy = 0
-    sess = tf.get_default_session()
     for offset in range(0, num_examples, cfg.BATCH_SIZE):
         batch_x = X_data[offset: offset + cfg.BATCH_SIZE]
         batch_y = y_data[offset: offset + cfg.BATCH_SIZE]
@@ -779,7 +782,7 @@ NETWORKS = {
     "simple_nn1": simple_1conv_layer_nn,
     "simple_nn2": simple_2conv_layer_nn,
     "lenet": LeNet,
-    "newnet": NewNet,
+    "deepnetmergelayers": DeepNetMergeLayers,
     "deepnet": DeepNet
 }
 
@@ -933,7 +936,7 @@ def main():
                              feed_dict={tensor_ops.x: batch_x, tensor_ops.y: batch_y,
                                         tensor_ops.dropout_keep_prob: args.dropout})
 
-                validation_accuracy, validation_loss = evaluate(data.X_validation, data.y_validation,
+                validation_accuracy, validation_loss = evaluate(sess, data.X_validation, data.y_validation,
                                                                 tensor_ops, cfg)
                 print("EPOCH {} ...".format(i+1))
                 print("Validation Accuracy = {:.3f}\n".format(validation_accuracy))
