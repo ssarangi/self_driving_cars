@@ -182,13 +182,37 @@ class Image:
         image[y:y+h, x:x+w, :]=sub_image
         return image
 
+    @staticmethod
+    def grayscale(image):
+        # use lumnosity to convert to grayscale as done by GIMP software
+        # refer https://www.johndcook.com/blog/2009/08/24/algorithms-convert-color-grayscale/
+        image = image[:,:,0] * .21 + image[:,:,1] * .72 + image[:,:,2]* .07
+        return image
+
+    @staticmethod
+    def normalize(data):
+        return data / 255 * 0.8 + 0.1
+
+    # iterate through the image set and convert them to grayscale images
+    @staticmethod
+    def preprocess(data):
+        gray_images = []
+        for image in data:
+            gray = Image.grayscale(image)
+            gray = np.reshape(gray,(32 , 32, 1))
+            gray_images.append(gray)
+
+        gray_images = np.array(gray_images)
+        gray_images = Image.normalize(gray_images)
+
+        return gray_images
 
 class Data:
     """
     Encode the different data so its easier to pass them around
     """
     def __init__(self, X_train, y_train, X_validation, y_validation, X_test,
-                 y_test, images_from_internet):
+                 y_test, images_from_internet, filenames_from_internet):
         self.X_train = X_train
         self.y_train = y_train
         self.X_validation = X_validation
@@ -196,14 +220,15 @@ class Data:
         self.X_test = X_test
         self.y_test = y_test
         self.images_from_internet = images_from_internet
+        self.filenames_from_internet = filenames_from_internet
 
         self.frame = pd.read_csv('signnames.csv')
 
-    def normalize_data(self):
+    def preprocess(self):
         # Normalize the RGB values to 0.0 to 1.0
-        self.X_train = self.X_train / 255.0
-        self.X_validation = self.X_validation / 255.0
-        self.X_test = self.X_test / 255.0
+        self.X_train = Image.preprocess(self.X_train)
+        self.X_test  = Image.preprocess(self.X_test)
+        self.X_validation = Image.preprocess(self.X_validation)
 
     def get_signname(self, label_id):
         return self.frame["SignName"][label_id]
@@ -705,7 +730,7 @@ def load_traffic_sign_data(training_file, testing_file):
     # Split the data into the training and validation steps.
     X_train, X_validation, y_train, y_validation = train_test_split(X_train, y_train, test_size=0.2, random_state=0)
 
-    files = ['final_test_set/cross.jpg',
+    files_from_internet = ['final_test_set/cross.jpg',
              'final_test_set/speed_limit_50.jpg',
              'final_test_set/stop.jpg',
              'final_test_set/walk.jpg',
@@ -713,13 +738,19 @@ def load_traffic_sign_data(training_file, testing_file):
              ]
 
     imgs_from_internet = []
-    for f in files:
+    for f in files_from_internet:
         img = cv2.cvtColor(cv2.imread(f), cv2.COLOR_BGR2RGB)
         imgs_from_internet.append(img)
 
     imgs_from_internet = np.array(imgs_from_internet)
 
-    data = Data(X_train, y_train, X_validation, y_validation, X_test, y_test, imgs_from_internet)
+    X_train = Image.preprocess(X_train)
+    X_test  = Image.preprocess(X_test)
+    X_validation = Image.preprocess(X_validation)
+
+    imgs_from_internet = Image.preprocess(imgs_from_internet)
+
+    data = Data(X_train, y_train, X_validation, y_validation, X_test, y_test, imgs_from_internet, files_from_internet)
 
     return data
 
