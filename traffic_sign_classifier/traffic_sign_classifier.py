@@ -19,6 +19,7 @@ import pandas as pd
 import random
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 
 from scipy import ndimage
 
@@ -95,7 +96,7 @@ class TensorOps:
     This class stores the tensor ops which are the end layers which we use for
     training.
     """
-    def __init__(self, x, y, training_op, accuracy_op, loss_op, logits, saver):
+    def __init__(self, x, y, dropout_keep_prob, training_op, accuracy_op, loss_op, logits, saver):
         """
         x: Tensor for the input class
         y: Tensor for the output class
@@ -105,6 +106,7 @@ class TensorOps:
         """
         self.x = x
         self.y = y
+        self.dropout_keep_prob = dropout_keep_prob
         self.training_op = training_op
         self.accuracy_op = accuracy_op
         self.loss_op = loss_op
@@ -385,9 +387,6 @@ def convolutional_layer(input, num_input_filters, num_output_filters, filter_sha
 
     conv = tf.nn.conv2d(input, conv_W, strides, padding) + conv_b
 
-    fc = tf.contrib.layers.batch_norm(conv,
-                                      center=True, scale=True,
-                                      is_training=True)
     # Activation Layer
     if activation_func is not None:
         conv = activation_func(conv)
@@ -397,186 +396,51 @@ def convolutional_layer(input, num_input_filters, num_output_filters, filter_sha
 
 
 def fully_connected_layer(input, input_size, output_size, mean, stddev,
-                          activation_func, dropout_prob, use_batch_normalization, name):
+                          activation_func, dropout_prob, name):
     fc_W = tf.Variable(tf.truncated_normal(shape=(input_size, output_size),
                        mean=mean, stddev=stddev), name=name + "_W")
     fc_b = tf.Variable(tf.zeros(output_size), name=name + "_b")
     fc   = tf.matmul(input, fc_W) + fc_b
 
-    if use_batch_normalization:
-        fc = tf.contrib.layers.batch_norm(fc,
-                                          center=True, scale=True,
-                                          is_training=True)
     if activation_func is not None:
         fc = activation_func(fc, name=name + "_relu")
 
-    if dropout_prob > 0.0:
-        fc = tf.nn.dropout(fc, dropout_prob)
+    fc = tf.nn.dropout(fc, dropout_prob)
 
     return fc, output_size
 
 
-def maxpool2d_and_dropout(input, ksize, strides, padding, dropout_prob):
-    maxpool = tf.nn.max_pool(input, ksize, strides, padding)
+def maxpool2d(input, ksize, strides, padding, name=""):
+    maxpool = tf.nn.max_pool(input, ksize, strides, padding, name=name)
 
-    output = maxpool
-    if dropout_prob > 0.0:
-        dropout = tf.nn.dropout(maxpool, dropout_prob)
+    return maxpool
 
-    return output
+def flatten_layer(layer):
+    # Get the shape of the input layer.
+    layer_shape = layer.get_shape()
+    num_features = layer_shape[1:4].num_elements()
+    layer_flat = tf.reshape(layer, [-1, num_features])
+    return layer_flat, num_features
 
-
-def simple_1conv_layer_nn(x, cfg):
-    mu = 0
-    sigma = 0.1
-
-    # Convolutional Layer 1: Input 32x32x3         Output = 26x26x12
-    conv1, num_output_filters = convolutional_layer(x, num_input_filters=3, num_output_filters=12,
-                               filter_shape=(7, 7), strides=[1,1,1,1], padding='VALID',
-                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
-
-    # Now use a fully connected Layer
-    fc0 = flatten(conv1)
-
-    shape = fc0.get_shape().as_list()[1]
-
-    # Use 2 more layers
-    # Fully Connected: Input = 192               Output = 96
-    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc1")
-
-    # Fully Connected: Input = 96               Output = 43
-    logits, output_size = fully_connected_layer(fc1, output_size, 43, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="logits")
-
-    return logits
-
-
-def simple_2conv_layer_nn(x, cfg):
-    mu = 0
-    sigma = 0.1
-
-    # Convolutional Layer 1: Input 32x32x3         Output = 26x26x12
-    conv1, num_output_filters = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=12,
-                               filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
-                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
-
-    conv1 = maxpool2d_and_dropout(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                                  padding='VALID', dropout_prob=0.2)
-
-
-    conv2, num_output_filters = convolutional_layer(conv1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(7, 7), strides=[1,1,1,1], padding='SAME',
-                               mean=mu, stddev=sigma, name="conv2d_1")
-
-    conv2 = maxpool2d_and_dropout(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                                  padding='VALID', dropout_prob=0.4)
-
-    # Now use a fully connected Layer
-    fc0 = flatten(conv1)
-
-    shape = fc0.get_shape().as_list()[1]
-
-    # Use 2 more layers
-    # Fully Connected: Input = 192               Output = 96
-    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, 0.5, use_batch_normalization=cfg.IS_TRAINING, name="fc1")
-
-    # Fully Connected: Input = 96               Output = 43
-    logits, output_size = fully_connected_layer(fc1, 96, 43, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="logits")
-
-    return logits
-
-# A Deep Network implementation
-def DeepNet(x, cfg):
-    # Hyper parameters
-    mu = 0
-    sigma = 0.1
-
-    # Convolutional Layer 1: Input 32x32x3         Output = 32x32x12
-    conv1, num_output_filters = convolutional_layer(x, num_input_filters=3, num_output_filters=12,
-                               filter_shape=(3, 3), strides=[1,1,1,1], padding='SAME',
-                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
-
-    # Convolutional Layer 2: Input 32x32x12         Output = 28x28x24
-    conv2, num_output_filters = convolutional_layer(conv1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
-                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_2")
-
-    # Convolutional Layer 3: Input 28x28x24         Output = 24x24x48
-    conv3, num_output_filters = convolutional_layer(conv2, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
-                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_3")
-
-    # Convolutional Layer 4: Input 24x24x48         Output = 16x16x96
-    conv4, num_output_filters = convolutional_layer(conv3, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(9, 9), strides=[1,1,1,1], padding='VALID',
-                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_4")
-
-    # Now lets add Convolutional Layers with downsampling
-    conv5, num_output_filters = convolutional_layer(conv4, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(3, 3), strides=[1,1,1,1], padding='SAME',
-                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_5")
-
-    # MaxPool Layer: Input 16x16x192                 Output = 16x16x384
-    conv5 = tf.nn.max_pool(conv5, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
-
-    # Convolutional Layer 6: Input 16x16x384         Output = 8x8x384
-    conv6, num_output_filters = convolutional_layer(conv5, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
-                               filter_shape=(11, 11), strides=[1,1,1,1], padding='SAME',
-                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_6")
-
-    # MaxPool Layer: Input 8x8x384                 Output = 4x4x384
-    conv6 = tf.nn.max_pool(conv6, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
-
-    # Fully Connected Layer
-    fc0 = flatten(conv6)
-
-    print(fc0.get_shape())
-
-    # Fully Connected: Input = 6144                Output = 3072
-    fc1, output_size = fully_connected_layer(fc0, 6144, 3072, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc1")
-
-    # Fully Connected: Input = 3072                Output = 1536
-    fc2, output_size = fully_connected_layer(fc1, 3072, 1536, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc2")
-
-    # Fully Connected: Input = 1536               Output = 768
-    fc3, output_size = fully_connected_layer(fc2, 1536, 768, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc3")
-
-
-    # Fully Connected: Input = 768               Output = 384
-    fc4, output_size = fully_connected_layer(fc3, 768, 384, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc4")
-
-    # Fully Connected: Input = 384               Output = 192
-    fc5, output_size = fully_connected_layer(fc4, 384, 192, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc5")
-
-    # Fully Connected: Input = 192               Output = 96
-    fc6, output_size = fully_connected_layer(fc5, 192, 96, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc6")
-
-    # Fully Connected: Input = 96               Output = 43
-    logits, output_size = fully_connected_layer(fc6, 96, 43, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="logits")
-
-    return logits
-
-
-def LeNet(x, cfg):
+def LeNet(x, dropout_keep_prob, cfg):
     mu = 0
     sigma = 0.1
 
     # Convolutional Layer 1: Input 32x32x3         Output = 28x28x6
     conv1, num_output_filters = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=6,
-                               filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
-                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
 
     # Maxpool Layer : Input 28x28x6                Output = 14x14x6
-    maxpool1 = maxpool2d_and_dropout(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                                     padding='VALID', dropout_prob=0.5)
+    maxpool1 = maxpool2d(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
 
     # Convolutional Layer : Input 14x14x6          Output = 10x10x16
     conv2, num_output_filters = convolutional_layer(maxpool1, num_input_filters=num_output_filters, num_output_filters=16,
-                               filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
-                               mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_2")
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_2")
 
     # Maxpool Layer : Input = 10x10x16             Output = 5x5x16
-    maxpool2 = maxpool2d_and_dropout(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                                     padding='VALID', dropout_prob=0.0)
+    maxpool2 = maxpool2d(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
 
     # Fully Connected Layer
     fc0 = flatten(maxpool2)
@@ -584,88 +448,242 @@ def LeNet(x, cfg):
     shape = fc0.get_shape().as_list()[1]
 
     # Layer 3: Fully Connected: Input = 400           Output = 120
-    fc1, shape = fully_connected_layer(fc0, shape, 120, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc1")
+    fc1, shape = fully_connected_layer(fc0, shape, 120, mu, sigma, tf.nn.relu, dropout_keep_prob, name="fc1")
 
     # Layer 4: Fully Connected: Input = 120           Output = 84
-    fc2, shape = fully_connected_layer(fc1, shape, 84, mu, sigma, tf.nn.relu, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="fc2")
+    fc2, shape = fully_connected_layer(fc1, shape, 84, mu, sigma, tf.nn.relu, dropout_keep_prob, name="fc2")
 
     # logits
-    logits, _ = fully_connected_layer(fc2, shape, cfg.MAX_LABELS, mu, sigma, None, 0.0, use_batch_normalization=cfg.IS_TRAINING, name="logits")
+    # MAKE SURE LOGITS HAS NO DROPOUT
+    logits, _ = fully_connected_layer(fc2, shape, cfg.MAX_LABELS, mu, sigma,
+                                      activation_func=None, dropout_prob=1.0,
+                                      name="logits")
+
+    # Create a Network param dict for visualization
+    network_params = {
+        "conv1": conv1,
+        "maxpool1": maxpool1,
+        "conv2": conv2,
+        "maxpool2": maxpool2,
+        "fc0": fc0,
+        "fc1": fc1,
+        "fc2": fc2,
+        "logits": logits
+    }
+
+    cfg.NETWORK_PARAMS = network_params
 
     return logits
 
-# LeNet implementation
-def LeNet_Orig(x, cfg):
+def simple_1conv_layer_nn(x, dropout_keep_prob, cfg):
+    mu = 0
+    sigma = 0.1
+
+    # Convolutional Layer 1: Input 32x32x3         Output = 26x26x12
+    conv1, num_output_filters = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=12,
+                                                    filter_shape=(7, 7), strides=[1,1,1,1], padding='VALID',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
+
+    # Now use a fully connected Layer
+    fc0 = flatten(conv1)
+
+    shape = fc0.get_shape().as_list()[1]
+
+    # Use 2 more layers
+    # Fully Connected: Input = 192               Output = 96
+    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma, tf.nn.relu, dropout_keep_prob, name="fc1")
+
+    # Fully Connected: Input = 96               Output = 43
+    logits, output_size = fully_connected_layer(fc1, output_size, cfg.MAX_LABELS, mu, sigma,
+                                                activation_func=None, dropout_prob=1.0, name="logits")
+
+    # Create a Network param dict for visualization
+    network_params = {
+        "conv1": conv1,
+        "fc0": fc0,
+        "fc1": fc1,
+        "logits": logits
+    }
+
+    cfg.NETWORK_PARAMS = network_params
+
+    return logits
+
+def simple_2conv_layer_nn(x, dropout_keep_prob, cfg):
+    mu = 0
+    sigma = 0.1
+
+    # Convolutional Layer 1: Input 32x32x3         Output = 26x26x12
+    conv1, num_output_filters = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=12,
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
+
+    conv1 = maxpool2d(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
+
+
+    conv2, num_output_filters = convolutional_layer(conv1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+                                                    filter_shape=(7, 7), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
+
+    conv2 = maxpool2d(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
+
+    # Now use a fully connected Layer
+    fc0 = flatten(conv1)
+
+    shape = fc0.get_shape().as_list()[1]
+
+    # Use 2 more layers
+    # Fully Connected: Input = 192               Output = 96
+    fc1, output_size = fully_connected_layer(fc0, shape, 96, mu, sigma,
+                                             activation_func=tf.nn.relu, dropout_prob=dropout_keep_prob, name="fc1")
+
+    # Fully Connected: Input = 96               Output = 43
+    logits, output_size = fully_connected_layer(fc1, 96, 43, mu, sigma,
+                                                activation_func=None, dropout_prob=1.0, name="logits")
+
+    return logits
+
+def NewNet(x, dropout_keep_prob, cfg):
+    mu = 0
+    sigma = 0.1
+
+    conv1, num_output_filters = convolutional_layer(x, num_input_filters=cfg.NUM_CHANNELS_IN_IMAGE, num_output_filters=3,
+                                                    filter_shape=(1, 1), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
+
+
+    # Group 1
+    conv2, num_output_filters = convolutional_layer(conv1, num_input_filters=num_output_filters, num_output_filters=8,
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_2")
+
+    conv3, num_output_filters = convolutional_layer(conv2, num_input_filters=num_output_filters, num_output_filters=8,
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_3")
+
+    maxpool1 = maxpool2d(conv3, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name="maxpool1")
+
+    dropout1 = tf.nn.dropout(maxpool1, dropout_keep_prob, name="dropout1")
+
+    # Group 2
+    conv4, num_output_filters = convolutional_layer(dropout1, num_input_filters=num_output_filters, num_output_filters=16,
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_4")
+
+    conv5, num_output_filters = convolutional_layer(conv4, num_input_filters=num_output_filters, num_output_filters=16,
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_5")
+
+    maxpool2 = maxpool2d(conv5, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name="maxpool2")
+
+    dropout2 = tf.nn.dropout(maxpool2, dropout_keep_prob, name="dropout2")
+
+    # Group 3
+    conv6, num_output_filters = convolutional_layer(dropout2, num_input_filters=num_output_filters, num_output_filters=32,
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_6")
+
+    conv7, num_output_filters = convolutional_layer(conv6, num_input_filters=num_output_filters, num_output_filters=32,
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_6")
+
+    maxpool3 = maxpool2d(conv7, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name="maxpool3")
+
+    dropout3 = tf.nn.dropout(maxpool3, dropout_keep_prob, name="dropout3")
+
+    # Now Flatten all the layers together
+    layer_flat_group1, num_fc_layers_group1 = flatten_layer(dropout1)
+    layer_flat_group2, num_fc_layers_group2 = flatten_layer(dropout2)
+    layer_flat_group3, num_fc_layers_group3 = flatten_layer(dropout3)
+    layer_flat = tf.concat(values=[layer_flat_group1, layer_flat_group2, layer_flat_group3], axis=1)
+
+    num_fc_layers = num_fc_layers_group1 + num_fc_layers_group2 + num_fc_layers_group3
+
+    fc_size1 = 1024
+    ## FC_size
+    fc_size2 = 1024
+
+    # Fully Connected: Input = 1024               Output = 1024
+    fc1, output_size = fully_connected_layer(layer_flat, num_fc_layers, num_fc_layers, mu, sigma,
+                                             activation_func=tf.nn.relu, dropout_prob=dropout_keep_prob, name="fc1")
+
+    fc2, output_size = fully_connected_layer(fc1, num_fc_layers, num_fc_layers, mu, sigma,
+                                             activation_func=tf.nn.relu, dropout_prob=dropout_keep_prob, name="fc2")
+
+    # Fully Connected: Input = 96               Output = 43
+    logits, _ = fully_connected_layer(fc1, num_fc_layers, cfg.MAX_LABELS, mu, sigma,
+                                      activation_func=None, dropout_prob=1.0, name="logits")
+
+    return logits
+
+def DeepNet(x, dropout_keep_prob, cfg):
     # Hyper parameters
     mu = 0
     sigma = 0.1
 
-    # Convolutional Layer 1: Input = 32x32x3        Output = 28x28x6
-    conv1_W = tf.Variable(
-        tf.truncated_normal(
-            shape=(5, 5, cfg.NUM_CHANNELS_IN_IMAGE, 6),
-            mean=mu, stddev=sigma), name="v1")
+    # Convolutional Layer 1: Input 32x32x3         Output = 32x32x12
+    conv1, num_output_filters = convolutional_layer(x, num_input_filters=3, num_output_filters=12,
+                                                    filter_shape=(3, 3), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
 
-    conv1_b = tf.Variable(tf.zeros(6), name="v2")
+    # Convolutional Layer 2: Input 32x32x12         Output = 28x28x24
+    conv2, num_output_filters = convolutional_layer(conv1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_2")
 
-    conv1 = tf.nn.conv2d(x, conv1_W, strides=[1, 1, 1, 1], padding='VALID') + conv1_b
+    # Convolutional Layer 3: Input 28x28x24         Output = 24x24x48
+    conv3, num_output_filters = convolutional_layer(conv2, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+                                                    filter_shape=(5, 5), strides=[1,1,1,1], padding='VALID',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_3")
 
-    # Activation Layer
-    conv1 = tf.nn.relu(conv1)
+    # Convolutional Layer 4: Input 24x24x48         Output = 16x16x96
+    conv4, num_output_filters = convolutional_layer(conv3, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+                                                    filter_shape=(9, 9), strides=[1,1,1,1], padding='VALID',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_4")
 
-    print(conv1.get_shape())
+    # Now lets add Convolutional Layers with downsampling
+    conv5, num_output_filters = convolutional_layer(conv4, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+                                                    filter_shape=(3, 3), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_5")
 
-    # Max Pooling : Input = 28x28x6 Output = 14x14x6
-    conv1 = tf.nn.max_pool(
-        conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
+    # MaxPool Layer: Input 16x16x192                 Output = 16x16x384
+    conv5 = tf.nn.max_pool(conv5, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
-    # Convolutional Layer 2: Input = 14x14x6    Output: 10x10x16
-    conv2_W = tf.Variable(tf.truncated_normal(
-        shape=(5, 5, 6, 16), mean=mu, stddev=sigma), name="v3")
+    # Convolutional Layer 6: Input 16x16x384         Output = 8x8x384
+    conv6, num_output_filters = convolutional_layer(conv5, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+                                                    filter_shape=(11, 11), strides=[1,1,1,1], padding='SAME',
+                                                    mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_6")
 
-    conv2_b = tf.Variable(tf.zeros(16), name="v4")
-
-    conv2 = tf.nn.conv2d(conv1, conv2_W, strides=[1, 1, 1, 1], padding='VALID') + conv2_b
-
-    # Activation Layer
-    conv2 = tf.nn.relu(conv2)
-
-    # Max Pooling : Input = 10x10x16       Output = 5x5x16
-    conv2 = tf.nn.max_pool(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                           padding='VALID')
+    # MaxPool Layer: Input 8x8x384                 Output = 4x4x384
+    conv6 = tf.nn.max_pool(conv6, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
     # Fully Connected Layer
-    fc0 = flatten(conv2)
+    fc0 = flatten(conv6)
 
-    # Layer 3 - Fully Connected: Input = 400     Output = 120
-    fc1_W = tf.Variable(tf.truncated_normal(shape=(400, 120),
-                        mean=mu, stddev=sigma), name="v5")
+    # Fully Connected: Input = 6144                Output = 3072
+    fc1, output_size = fully_connected_layer(fc0, 6144, 3072, mu, sigma, tf.nn.relu, dropout_keep_prob, name="fc1")
 
-    fc1_b = tf.Variable(tf.zeros(120), name="v6")
-    fc1 = tf.matmul(fc0, fc1_W) + fc1_b
+    # Fully Connected: Input = 3072                Output = 1536
+    fc2, output_size = fully_connected_layer(fc1, 3072, 1536, mu, sigma, tf.nn.relu, dropout_keep_prob, name="fc2")
 
-    # Activation
-    fc1 = tf.nn.relu(fc1)
+    # Fully Connected: Input = 1536               Output = 768
+    fc3, output_size = fully_connected_layer(fc2, 1536, 768, mu, sigma, tf.nn.relu, dropout_keep_prob, name="fc3")
 
-    # Layer 4 : Fully Connected: Input = 120      Output = 84
-    fc2_W = tf.Variable(tf.truncated_normal(shape=(120, 84),
-                        mean=mu, stddev=sigma), name="v7")
 
-    fc2_b = tf.Variable(tf.zeros(84), name="v8")
-    fc2 = tf.matmul(fc1, fc2_W) + fc2_b
+    # Fully Connected: Input = 768               Output = 384
+    fc4, output_size = fully_connected_layer(fc3, 768, 384, mu, sigma, tf.nn.relu, dropout_keep_prob, name="fc4")
 
-    # Activation
-    fc2 = tf.nn.relu(fc2)
+    # Fully Connected: Input = 384               Output = 192
+    fc5, output_size = fully_connected_layer(fc4, 384, 192, mu, sigma, tf.nn.relu, dropout_keep_prob, name="fc5")
 
-    # Layer 5 - Fully Connected Input = 84         Output = Max Labels
-    fc3_W = tf.Variable(tf.truncated_normal(shape=(84, cfg.MAX_LABELS),
-                        mean=mu, stddev=sigma), name="v9")
+    # Fully Connected: Input = 192               Output = 96
+    fc6, output_size = fully_connected_layer(fc5, 192, 96, mu, sigma, tf.nn.relu, dropout_keep_prob, name="fc6")
 
-    fc3_b = tf.Variable(tf.zeros(cfg.MAX_LABELS), name="v10")
-    logits = tf.matmul(fc2, fc3_W) + fc3_b
-
+    # Fully Connected: Input = 96               Output = 43
+    # logits, output_size = fully_connected_layer(fc6, 96, 43, mu, sigma, tf.nn.relu, dropout_keep_prob, name="logits")
+    logits, output_size = fully_connected_layer(fc6, 96, cfg.MAX_LABELS, mu, sigma,
+                                                activation_func=None, dropout_prob=dropout_keep_prob, name="logits")
     return logits
-
 
 def train(cfg):
     print_header("Training " + cfg.NN_NAME + " --> Use Augmented Data: " + str(cfg.USE_AUGMENTED_FILE))
@@ -674,16 +692,18 @@ def train(cfg):
 
     x = tf.placeholder(tf.float32, (None,) + cfg.INPUT_LAYER_SHAPE, name='X')
     y = tf.placeholder(tf.int32, (None), name='Y')
+    dropout_keep_prob = tf.placeholder(tf.float32, name="dropout_keep_prob")
 
     one_hot_y = tf.one_hot(y, cfg.MAX_LABELS)
 
-    logits = NETWORKS[cfg.NN_NAME](x, cfg)
+    logits = NETWORKS[cfg.NN_NAME](x, dropout_keep_prob, cfg)
 
     cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
                     logits=logits, labels=one_hot_y)
 
     vars   = tf.trainable_variables()
-    lossL2 = tf.add_n([ tf.nn.l2_loss(v) for v in vars ]) * 0.001
+    lossL2 = tf.add_n([ tf.nn.l2_loss(v) for v in vars
+                    if 'bias' not in v.name ]) * 0.001
 
     loss_operation = tf.reduce_mean(cross_entropy) + lossL2
 
@@ -696,9 +716,8 @@ def train(cfg):
     accuracy_op = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
     saver = tf.train.Saver(), training_op, accuracy_op
 
-    tensor_ops = TensorOps(x, y, training_op, accuracy_op, loss_operation, logits, saver)
+    tensor_ops = TensorOps(x, y, dropout_keep_prob, training_op, accuracy_op, loss_operation, logits, saver)
     return tensor_ops
-
 
 def evaluate(X_data, y_data, tensor_ops, cfg):
     cfg.IS_TRAINING = False
@@ -710,14 +729,18 @@ def evaluate(X_data, y_data, tensor_ops, cfg):
         batch_y = y_data[offset: offset + cfg.BATCH_SIZE]
 
         accuracy, loss = sess.run([tensor_ops.accuracy_op, tensor_ops.loss_op],
-                            feed_dict={tensor_ops.x: batch_x, tensor_ops.y: batch_y})
+                            feed_dict={tensor_ops.x: batch_x, tensor_ops.y: batch_y,
+                                       tensor_ops.dropout_keep_prob: 1.0})
 
         total_accuracy += (accuracy * len(batch_x))
 
     return total_accuracy / num_examples, loss
 
 # Data Loading and processing part
-def load_traffic_sign_data(training_file, testing_file):
+from os import listdir
+from os.path import isfile, join
+
+def load_traffic_sign_data(training_file, testing_file, preprocess):
     with open(training_file, mode='rb') as f:
         train = pickle.load(f)
 
@@ -730,12 +753,8 @@ def load_traffic_sign_data(training_file, testing_file):
     # Split the data into the training and validation steps.
     X_train, X_validation, y_train, y_validation = train_test_split(X_train, y_train, test_size=0.2, random_state=0)
 
-    files_from_internet = ['final_test_set/cross.jpg',
-             'final_test_set/speed_limit_50.jpg',
-             'final_test_set/stop.jpg',
-             'final_test_set/walk.jpg',
-             'final_test_set/yield.jpg',
-             ]
+    internet_test_set_path = 'internet_test_set'
+    files_from_internet = [join(internet_test_set_path, f) for f in listdir(internet_test_set_path) if isfile(join(internet_test_set_path, f))]
 
     imgs_from_internet = []
     for f in files_from_internet:
@@ -744,21 +763,23 @@ def load_traffic_sign_data(training_file, testing_file):
 
     imgs_from_internet = np.array(imgs_from_internet)
 
-    X_train = Image.preprocess(X_train)
-    X_test  = Image.preprocess(X_test)
-    X_validation = Image.preprocess(X_validation)
-
-    imgs_from_internet = Image.preprocess(imgs_from_internet)
+    if preprocess:
+        X_train = Image.preprocess(X_train)
+        X_test  = Image.preprocess(X_test)
+        X_validation = Image.preprocess(X_validation)
+        imgs_from_internet = Image.preprocess(imgs_from_internet)
 
     data = Data(X_train, y_train, X_validation, y_validation, X_test, y_test, imgs_from_internet, files_from_internet)
 
     return data
+
 
 # Networks
 NETWORKS = {
     "simple_nn1": simple_1conv_layer_nn,
     "simple_nn2": simple_2conv_layer_nn,
     "lenet": LeNet,
+    "newnet": NewNet,
     "deepnet": DeepNet
 }
 
@@ -777,41 +798,37 @@ def visualize_data(df):
     legend2 = ax2.legend(loc='upper center', shadow=True)
 
     for i, group in df.groupby('network name'):
-        # group.plot(x='epochs', y='validation accuracy', ax=ax1, label=i, marker='o', linewidth=2)
-        # group.plot(x='epochs', y='loss', ax=ax2, label=i, marker='o', linewidth=2)
-        group.plot(x='epochs', y='validation accuracy', ax=ax1, label=i, linewidth=2)
-        group.plot(x='epochs', y='loss', ax=ax2, label=i, linewidth=2)
-
+        group.plot(x='epochs', y='validation accuracy', ax=ax1, label=i, marker='o', linewidth=2)
+        group.plot(x='epochs', y='loss', ax=ax2, label=i, marker='o', linewidth=2)
 
     plt.show()
 
-def predict(tensor_ops, images, data, cfg):
-    print("Predicting from Random Images")
+def predict(sess, tensor_ops, images, data, cfg, top_k=5):
+    print("Predicting from Random Images: Number of Images: %s" % images.shape[0])
     cfg.IS_TRAINING = False
-    sess = tf.get_default_session()
     pred = tf.nn.softmax(tensor_ops.logits)
-    predictions = sess.run(pred, feed_dict={tensor_ops.x: images})
-    values, indices = tf.nn.top_k(predictions, 5)
-    print(values.eval(), indices.eval())
+    predictions = sess.run(pred, feed_dict={tensor_ops.x: images, tensor_ops.dropout_keep_prob: 1.0})
+    values, indices = tf.nn.top_k(predictions, top_k)
+    values, indices = values.eval(session=sess), indices.eval(session=sess)
+    print(values, indices)
 
-    plt.figure(figsize=(25, 25))
+    filenames = data.filenames_from_internet
     for i, img in enumerate(images):
-        plt.subplot(images.shape[0], 2, i * 2 + 1)
-        plt.axis('off')
+        plt.figure(figsize = (top_k, 1.5))
+        gs = gridspec.GridSpec(1, 2,width_ratios=[2,3])
+        plt.subplot(gs[0])
+        if img.shape[2] == 1:
+            img = np.reshape(img, (img.shape[0], img.shape[1]))
         plt.imshow(img)
-
-        plt.subplot(images.shape[0], 2, i * 2 + 2)
-        prob = values.eval()[:, i]
-        sign_idx = indices.eval()[:, i]
-
-        signnames = []
-        for signname_idx in sign_idx:
-            signnames.append(data.get_signname(signname_idx))
-
-        plt.ylabel('Probabilities')
-        y_pos = np.arange(len(images))
-        plt.xticks(y_pos, signnames)
-        plt.bar(y_pos, prob, align='center', alpha=0.5)
+        plt.axis('off')
+        plt.subplot(gs[1])
+        plt.barh(top_k + 1 - np.arange(top_k), values[i], align='center')
+        for i_label in range(top_k):
+            plt.text(values[i][i_label] + .008, top_k + 1-i_label-.25, data.get_signname(indices[i][i_label]) + " --> (" + str(indices[i][i_label]) + ")")
+            plt.text(values[i][i_label] / 2.0 - 0.01, top_k + 1-i_label-.25, "{:2.1f}%".format(values[i][i_label] * 100.0))
+        plt.axis('off');
+        plt.text(0,6.95, filenames[i].split(".")[0].split('/')[1]);
+        plt.show();
 
     plt.show()
 
@@ -843,8 +860,14 @@ def main():
     parser.add_argument("--use_augmented_file", help="Use Augmented Training Data file"
                         ,action="store_true")
 
+    parser.add_argument("--preprocess", help="Preprocess the input data"
+                        ,action="store_true")
+
     parser.add_argument("--save_model", help="Save the Final Model"
                         ,action="store_true")
+
+    parser.add_argument("--dropout", help="Dropout probability for layers",
+                        type=float, default=1.0)
 
     args = parser.parse_args()
 
@@ -855,9 +878,9 @@ def main():
         networks = [args.network]
 
     if args.use_augmented_file:
-        data = load_traffic_sign_data('augmented/augmented.p', 'data/test.p')
+        data = load_traffic_sign_data('augmented/augmented.p', 'data/test.p', args.preprocess)
     else:
-        data = load_traffic_sign_data('data/train.p', 'data/test.p')
+        data = load_traffic_sign_data('data/train.p', 'data/test.p', args.preprocess)
 
     # Find the Max Classified Id - For example, in MNIST data we have digits
     # from 0,..,9
@@ -907,7 +930,8 @@ def main():
                     end = offset + cfg.BATCH_SIZE
                     batch_x, batch_y = X_train[offset:end], y_train[offset:end]
                     batch_res, batch_loss = sess.run([tensor_ops.training_op, tensor_ops.loss_op],
-                             feed_dict={tensor_ops.x: batch_x, tensor_ops.y: batch_y})
+                             feed_dict={tensor_ops.x: batch_x, tensor_ops.y: batch_y,
+                                        tensor_ops.dropout_keep_prob: args.dropout})
 
                 validation_accuracy, validation_loss = evaluate(data.X_validation, data.y_validation,
                                                                 tensor_ops, cfg)
@@ -925,7 +949,7 @@ def main():
                 saver.save(sess, "./" + network)
                 print("Model Saved")
 
-            predict(tensor_ops, data.images_from_internet, data, cfg)
+            predict(sess, tensor_ops, data.images_from_internet, data, cfg)
 
     df = pd.concat(dataframes)
     print(df)
