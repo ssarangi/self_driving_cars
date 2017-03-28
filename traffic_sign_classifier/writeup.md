@@ -406,12 +406,181 @@ For the second image ...
 
 - Simple NN1
 blockdiag {
-  Conv1-7x7x12 -> BatchNormalization -> Activation -> Flatten -> FullyConnected-96 -> Logits;
+  class conv [color = red, style = dashed, textcolor = white];
+  class relu [color = lightblue, textcolor = black];
+  class fullyconnected [color = brown, textcolor = white];
+  class logits [color = yellow];
+
+
+  Conv1-7x7x12 [stacked, class = "conv"];
+  Relu [class = "relu"];
+  FullyConnected-96 [class = "fullyconnected"];
+  Logits [class = "logits"];
+  Conv1-7x7x12 -> Relu -> Flatten -> FullyConnected-96 -> Logits;
 }
 
 - Simple NN2
 blockdiag {
-  Conv1-5x5x12 -> BatchNormalization1 -> Activation1 -> Maxpool1 -> Dropout-0.2 -> Conv2-7x7x24 -> BatchNormalization2 -> Activation2 -> Maxpool2 -> Dropout-0.4 -> Flatten -> FullyConnected-96 -> Logits;
+  class conv [color = red, style = dashed, textcolor = white];
+  class relu [color = lightblue, textcolor = black];
+  class fullyconnected [color = brown, textcolor = white];
+  class logits [color = yellow];
+  class maxpool_dropout [color = orange];
+
+  Conv1-5x5x12 [stacked, class = "conv"];
+  Conv2-7x7x24 [stacked, class = "conv"];
+  Relu1 [class = "relu"];
+  Relu2 [class = "relu"];
+  FullyConnected-96 [class = "fullyconnected"];
+  Logits [class = "logits"];
+  Dropout1 [class = "maxpool_dropout"]
+  Maxpool1 [class = "maxpool_dropout"]
+  Dropout2 [class = "maxpool_dropout"]
+  Maxpool2 [class = "maxpool_dropout"]
+
+  group {
+     orientation = portrait
+     Conv1-5x5x12 -> Relu1 -> Maxpool1 -> Dropout1
+  }
+
+  group {
+     orientation = portrait
+     Conv2-7x7x24 -> Relu2 -> Maxpool2 -> Dropout2
+  }
+
+   group {
+     orientation = portrait
+     Flatten -> FullyConnected-96 -> Logits
+  }
+
+  Dropout1 -> Conv2-7x7x24;
+  Dropout2 -> Flatten;
+
 }
 
-- Lenet:
+- DeepNet with Merging:
+blockdiag {
+  class conv [color = red, style = dashed, textcolor = white];
+  class relu [color = lightblue, textcolor = black];
+  class fullyconnected [color = brown, textcolor = white];
+  class logits [color = yellow];
+  class maxpool_dropout [color = orange];
+
+  Conv1-5x5x8 [stacked, class = "conv"];
+  Conv2-5x5x8 [stacked, class = "conv"];
+  Conv3-5x5x16 [stacked, class = "conv"];
+  Conv4-5x5x16 [stacked, class = "conv"];
+  Conv5-5x5x32 [stacked, class = "conv"];
+  Conv6-5x5x32 [stacked, class = "conv"];
+
+  Conv1-1x1x3 [stacked, class = "conv"];
+
+  Relu1 [class = "relu"];
+  Relu2 [class = "relu"];
+  Relu3 [class = "relu"];
+  Relu4 [class = "relu"];
+  Logits [class = "logits"];
+  Dropout1 [class = "maxpool_dropout"]
+  Maxpool1-2x2 [class = "maxpool_dropout"]
+  Dropout2 [class = "maxpool_dropout"]
+  Maxpool2-2x2 [class = "maxpool_dropout"]
+  Dropout3 [class = "maxpool_dropout"]
+  Maxpool3-2x2 [class = "maxpool_dropout"]
+
+  Dropout4 [class = "maxpool_dropout"]
+  Dropout5 [class = "maxpool_dropout"]
+
+  FullyConnected1-1024 [class = "fullyconnected"];
+  FullyConnected2-1024 [class = "fullyconnected"];
+
+
+  group {
+     orientation = portrait
+     Conv1-5x5x8 -> Relu1 -> Conv2-5x5x8 -> Relu2 -> Maxpool1-2x2
+  }
+
+  group {
+     orientation = portrait
+     Conv3-5x5x16 -> Relu3 -> Conv4-5x5x16 -> Relu4 -> Maxpool2-2x2
+  }
+
+  group {
+     orientation = portrait
+     Conv5-5x5x32 -> Relu5 -> Conv6-5x5x32 -> Relu6 -> Maxpool3-2x2
+  }
+
+  group {
+     orientation = portrait
+     Flatten -> FullyConnected1-1024 -> Dropout4 -> FullyConnected2-1024 -> Dropout5 -> Logits
+  }
+
+  Conv1-1x1x3 -> Conv1-5x5x8;
+  Maxpool1-2x2 -> Dropout1;
+  Dropout1 -> Conv3-5x5x16;
+  Maxpool2-2x2 -> Dropout2;
+  Dropout2 -> Conv5-5x5x32;
+  Maxpool3-2x2 -> Dropout3;
+
+  Dropout1 -> Flatten;
+  Dropout2 -> Flatten;
+  Dropout3 -> Flatten;
+}
+
+- DeepNet without Merging
+blockdiag {
+  class conv [color = red, style = dashed, textcolor = white];
+  class relu [color = lightblue, textcolor = black];
+  class fullyconnected [color = brown, textcolor = white];
+  class logits [color = yellow];
+  class maxpool_dropout [color = orange];
+
+  Conv1-3x3x12 [stacked, class = "conv"];
+  Conv2-5x5x24 [stacked, class = "conv"];
+  Conv3-5x5x48 [stacked, class = "conv"];
+  Conv4-9x9x96 [stacked, class = "conv"];
+  Conv5-3x3x192 [stacked, class = "conv"];
+  Conv6-11x11x384 [stacked, class = "conv"];
+
+  Conv1-1x1x3 [stacked, class = "conv"];
+
+  Relu1 [class = "relu"];
+  Relu2 [class = "relu"];
+  Relu3 [class = "relu"];
+  Relu4 [class = "relu"];
+  Relu5 [class = "relu"];
+  Relu6 [class = "relu"];
+
+  Logits [class = "logits"];
+
+  Dropout1 [class = "maxpool_dropout"]
+  Dropout2 [class = "maxpool_dropout"]
+  Dropout3 [class = "maxpool_dropout"]
+  Dropout4 [class = "maxpool_dropout"]
+  Dropout5 [class = "maxpool_dropout"]
+  Dropout6 [class = "maxpool_dropout"]
+
+  Maxpool1-2x2 [class = "maxpool_dropout"]
+  Maxpool2-2x2 [class = "maxpool_dropout"]
+
+  FullyConnected1-3072 [class = "fullyconnected"];
+  FullyConnected2-1536 [class = "fullyconnected"];
+  FullyConnected3-768 [class = "fullyconnected"];
+  FullyConnected4-384 [class = "fullyconnected"];
+  FullyConnected5-192 [class = "fullyconnected"];
+  FullyConnected6-96 [class = "fullyconnected"];
+
+  group {
+     orientation = portrait
+     Conv1-3x3x12 -> Relu2 -> Conv2-5x5x24 -> Relu3 -> Conv3-5x5x48 -> Relu4 -> Conv4-9x9x96 -> Relu5 -> Conv5-3x3x192 -> Relu6
+  }
+
+  group {
+     orientation = portrait
+     Flatten -> FullyConnected1-3072 -> Dropout1 -> FullyConnected2-1536 -> Dropout2 -> FullyConnected3-768 -> Dropout3 -> FullyConnected4-384 -> Dropout4 -> FullyConnected5-192 -> Dropout5 -> FullyConnected6-96 -> Dropout6 -> Logits
+  }
+
+  Conv1-1x1x3 -> Relu1 -> Conv1-3x3x12;
+  Relu5 -> Maxpool1-2x2
+  Maxpool1-2x2 -> Conv6-11x11x384 -> Maxpool2-2x2 -> Flatten;
+
+}

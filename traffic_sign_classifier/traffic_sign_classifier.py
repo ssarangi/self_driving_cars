@@ -518,17 +518,17 @@ def simple_2conv_layer_nn(x, dropout_keep_prob, cfg):
                                                     filter_shape=(5, 5), strides=[1,1,1,1], padding='SAME',
                                                     mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
 
-    conv1 = maxpool2d(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
+    maxpool1 = maxpool2d(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID', name="maxpool1")
 
 
-    conv2, num_output_filters = convolutional_layer(conv1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
+    conv2, num_output_filters = convolutional_layer(maxpool1, num_input_filters=num_output_filters, num_output_filters=num_output_filters * 2,
                                                     filter_shape=(7, 7), strides=[1,1,1,1], padding='SAME',
                                                     mean=mu, stddev=sigma, activation_func=tf.nn.relu, name="conv2d_1")
 
-    maxpool1 = maxpool2d(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID', name="maxpool1")
+    maxpool2 = maxpool2d(conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID', name="maxpool2")
 
     # Now use a fully connected Layer
-    fc0 = flatten(maxpool1)
+    fc0 = flatten(maxpool2)
 
     shape = fc0.get_shape().as_list()[1]
 
@@ -686,7 +686,7 @@ def DeepNet(x, dropout_keep_prob, cfg):
     # Fully Connected: Input = 96               Output = 43
     # logits, output_size = fully_connected_layer(fc6, 96, 43, mu, sigma, tf.nn.relu, dropout_keep_prob, name="logits")
     logits, output_size = fully_connected_layer(fc6, 96, cfg.MAX_LABELS, mu, sigma,
-                                                activation_func=None, dropout_prob=dropout_keep_prob, name="logits")
+                                                activation_func=None, dropout_prob=1.0, name="logits")
     return logits
 
 def train(cfg):
@@ -718,7 +718,7 @@ def train(cfg):
         tf.argmax(logits, 1), tf.argmax(one_hot_y, 1))
 
     accuracy_op = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-    saver = tf.train.Saver(), training_op, accuracy_op
+    saver = tf.train.Saver()
 
     tensor_ops = TensorOps(x, y, dropout_keep_prob, training_op, accuracy_op, loss_operation, logits, saver)
     return tensor_ops
@@ -762,6 +762,8 @@ def load_traffic_sign_data(training_file, testing_file, preprocess):
     imgs_from_internet = []
     for f in files_from_internet:
         img = cv2.cvtColor(cv2.imread(f), cv2.COLOR_BGR2RGB)
+        if img.shape != (32, 32, 3):
+            img = cv2.resize(img, (32, 32), interpolation = cv2.INTER_CUBIC)
         imgs_from_internet.append(img)
 
     imgs_from_internet = np.array(imgs_from_internet)
@@ -808,6 +810,7 @@ def visualize_data(df):
 
 def predict(sess, tensor_ops, images, data, cfg, top_k=5):
     print("Predicting from Random Images: Number of Images: %s" % images.shape[0])
+    print(images.shape)
     cfg.IS_TRAINING = False
     pred = tf.nn.softmax(tensor_ops.logits)
     predictions = sess.run(pred, feed_dict={tensor_ops.x: images, tensor_ops.dropout_keep_prob: 1.0})
@@ -871,6 +874,9 @@ def main():
 
     parser.add_argument("--dropout", help="Dropout probability for layers",
                         type=float, default=1.0)
+
+    parser.add_argument("--predict", help="Do the prediction along with training",
+                        action="store_true")
 
     args = parser.parse_args()
 
@@ -943,16 +949,17 @@ def main():
                 df.loc[i] = [network, i+1, "{:2.1f}".format(validation_accuracy * 100.0), validation_loss]
 
 
-            test_accuracy, test_loss = evaluate(data.X_test, data.y_test, tensor_ops, cfg)
+            test_accuracy, test_loss = evaluate(sess, data.X_test, data.y_test, tensor_ops, cfg)
             print("Test Accuracy = {:.3f}\n".format(test_accuracy))
             df['test accuracy'] = "{:.3f}".format(test_accuracy)
             dataframes.append(df)
 
             if cfg.SAVE_MODEL is True:
-                saver.save(sess, "./" + network)
+                tensor_ops.saver.save(sess, "./" + network)
                 print("Model Saved")
 
-            predict(sess, tensor_ops, data.images_from_internet, data, cfg)
+            if args.predict:
+                predict(sess, tensor_ops, data.images_from_internet, data, cfg)
 
     df = pd.concat(dataframes)
     print(df)
