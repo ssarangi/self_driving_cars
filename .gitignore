@@ -93,3 +93,4 @@ ENV/
 
 # Behavior Cloning
 behavior_cloning/sample_training_data/
+behavior_cloning/sim/
