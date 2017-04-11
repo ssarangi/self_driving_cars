@@ -16,11 +16,13 @@ from keras.models import load_model
 import h5py
 from keras import __version__ as keras_version
 
+import scipy
+from scipy.misc import imread
+
 sio = socketio.Server()
 app = Flask(__name__)
 model = None
 prev_image_array = None
-
 
 class SimplePIController:
     def __init__(self, Kp, Ki):
@@ -60,12 +62,14 @@ def telemetry(sid, data):
         # The current image from the center camera of the car
         imgString = data["image"]
         image = Image.open(BytesIO(base64.b64decode(imgString)))
+        image = scipy.misc.imresize(image, 50)
+        # Perform the same preprocessing we performed on the training here
         image_array = np.asarray(image)
-        steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
 
+        steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
         throttle = controller.update(float(speed))
 
-        print(steering_angle, throttle)
+        print("Angle: %s, Throttle: %s" % (steering_angle, throttle))
         send_control(steering_angle, throttle)
 
         # save frame
