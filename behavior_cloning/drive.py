@@ -62,9 +62,9 @@ def telemetry(sid, data):
         # The current image from the center camera of the car
         imgString = data["image"]
         image = Image.open(BytesIO(base64.b64decode(imgString)))
-        image = scipy.misc.imresize(image, 50)
+        npimage = scipy.misc.imresize(image, (80, 160))
         # Perform the same preprocessing we performed on the training here
-        image_array = np.asarray(image)
+        image_array = np.asarray(npimage)
 
         steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
         throttle = controller.update(float(speed))

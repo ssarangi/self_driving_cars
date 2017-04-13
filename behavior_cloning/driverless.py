@@ -509,14 +509,16 @@ def main_generator():
         df = read_sample_training(df)
 
     df = rearrange_and_augment_dataframe(df, shuffle_data=True)
-    recovery_df = read_recovery_track_data()
-    df = pd.concat([df, recovery_df])
-    # df = align_steering_angles_data(df)
+    if args.track == "track2" or args.track == "both":
+        recovery_df = read_recovery_track_data()
+        df = pd.concat([df, recovery_df])
+
+    df = align_steering_angles_data(df)
     if args.show_data_distribution:
         show_data_distribution(df)
         return
 
-    BATCH_SIZE = 512
+    BATCH_SIZE = 256
     train_samples, validation_samples = train_test_split(df, test_size=0.2)
     print("Total Training Samples: %s" % len(train_samples.index))
     print("Total Validation Samples: %s" % len(validation_samples.index))
