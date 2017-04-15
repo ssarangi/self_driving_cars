@@ -65,12 +65,16 @@ def show_data_distribution(df):
 def nvidia_end_to_end(shape, l2_regularization_scale):
     print("Training Nvidia End To End of input shape %s" % str(shape))
     height = shape[0]
-    crop_factor = 0.4 # Top 40% to be removed
+    crop_factor = 0.2 # Top 40% to be removed
     crop_size = (int)(crop_factor * height)
     model = Sequential()
     model.add(Cropping2D(cropping=((crop_size, 0), (0, 0)), input_shape=shape))
     model.add(Lambda(lambda x: (x / 255.0) - 0.5))
     model.add(BatchNormalization(axis=1, input_shape=shape))
+
+    model.add(Convolution2D(3,(1, 1), border_mode='valid', activation='elu',
+              name='conv0', init='he_normal'))
+
     model.add(Convolution2D(16, (3, 3), padding='valid', strides=(2, 2), activation='elu',
               kernel_regularizer=l2(l2_regularization_scale),
               bias_regularizer=l2(l2_regularization_scale)))
@@ -513,12 +517,12 @@ def main_generator():
         recovery_df = read_recovery_track_data()
         df = pd.concat([df, recovery_df])
 
-    df = align_steering_angles_data(df)
+    # df = align_steering_angles_data(df)
     if args.show_data_distribution:
         show_data_distribution(df)
         return
 
-    BATCH_SIZE = 256
+    BATCH_SIZE = 512
     train_samples, validation_samples = train_test_split(df, test_size=0.2)
     print("Total Training Samples: %s" % len(train_samples.index))
     print("Total Validation Samples: %s" % len(validation_samples.index))
