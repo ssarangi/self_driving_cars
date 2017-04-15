@@ -12,7 +12,7 @@ from PIL import Image
 from flask import Flask
 from io import BytesIO
 
-from keras.models import load_model
+from keras.models import load_model, Model
 import h5py
 from keras import __version__ as keras_version
 
@@ -20,10 +20,16 @@ import scipy
 from scipy.misc import imread
 from scipy.signal import butter, lfilter
 
+import matplotlib
+import matplotlib.pyplot as plt
+matplotlib.style.use('ggplot')
+
 sio = socketio.Server()
 app = Flask(__name__)
 model = None
 prev_image_array = None
+
+steering_angles = np.array([])
 
 def butter_bandpass(lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
@@ -110,6 +116,11 @@ controller.set_desired(set_speed)
 
 @sio.on('telemetry')
 def telemetry(sid, data):
+    global steering_angles
+    fs = 50.0
+    lowcut = -5.0
+    highcut = 5.0
+
     if data:
         # The current steering angle of the car
         steering_angle = data["steering_angle"]
@@ -127,10 +138,16 @@ def telemetry(sid, data):
 
         steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
         throttle = controller.update(float(speed))
+        # if steering_angles.shape[0] > 10:
+        #     # Delete the 0th element
+        #     steering_angles = steering_angles[1:]
+        #
+        # steering_angles = np.append(steering_angles, steering_angle)
+        # filtered = butter_bandpass_filter(steering_angles, lowcut, highcut, fs, order=3)
+        # steering_angle = filtered[-1]
 
         print("Angle: %s, Throttle: %s" % (steering_angle, throttle))
         send_control(steering_angle, throttle)
-
         # save frame
         if args.image_folder != '':
             timestamp = datetime.utcnow().strftime('%Y_%m_%d_%H_%M_%S_%f')[:-3]

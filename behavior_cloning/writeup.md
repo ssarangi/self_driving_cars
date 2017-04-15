@@ -80,11 +80,24 @@ Finally I combined all these training data into a single dataset to see how the 
 
 # Dataset Augmentation
 
+Data Augmentation is a big part of the experiments we carry out with this project. Although,
+gathering training data is not very difficult with the simulator, still driving around laps
+after laps on the simulator can become cumbersome.
+
+I realized early on that even though the 0 steering angle had a major predominance in this training data yet throwing it away wasn't necessary. So the techniques I tried are listed
+below.
+- Flip the center image & the steering angle
+- Generate about 20 times the data by changing brightness of all center, left & right images for steering angles less than -0.025 and greater than 0.025.
+
+Since this would have been a lot of data all the augmentation was done while the network was running. I used Pandas Dataframes to generate augmentation by storing columns with the augmentation techniques and during training these were read and the techniques applied appropriately.
+
 # Network Selection
+After reading a lot of material, I decided to use the Nvidia Model for this behavior training.
 
 # Network Architecture
 
 # Overfitting
+One of the biggest problem with this particular project was the overfitting. Within a very few epochs, the network would start overfitting.
 
 # Layer Visualization
 
