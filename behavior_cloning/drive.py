@@ -18,11 +18,69 @@ from keras import __version__ as keras_version
 
 import scipy
 from scipy.misc import imread
+from scipy.signal import butter, lfilter
 
 sio = socketio.Server()
 app = Flask(__name__)
 model = None
 prev_image_array = None
+
+def butter_bandpass(lowcut, highcut, fs, order=5):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = butter(order, [low, high], btype='band')
+    return b, a
+
+
+def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
+    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
+    y = lfilter(b, a, data)
+    return y
+
+def data_gen(t=0):
+    cnt = 0
+    while cnt < 1000:
+        cnt += 1
+        t += 0.1
+        yield t, np.sin(2*np.pi*t) * np.exp(-t/10.)
+
+def run(data):
+    # update the data
+    t, y = data
+    xdata.append(t)
+    ydata.append(y)
+    xmin, xmax = ax.get_xlim()
+
+    if t >= xmax:
+        ax.set_xlim(xmin, 2*xmax)
+        ax.figure.canvas.draw()
+    line.set_data(xdata, ydata)
+
+    return line
+
+class RealTimePlot:
+    def __init__(self, xlim=(0, 10), ylim=(-2.0, 2.0)):
+        self.fig, (self.ax1, self.ax2) = plt.subplots(2, sharex=True)
+        self.line1 = self.ax1.plot([], [], lw=2)
+        self.line2 = self.ax2.plot([], [], lw=2)
+
+
+    def init_animation(self):
+        self.ax1.set_ylim(ylim[0], ylim[1])
+        self.ax2.set_xlim(xlim[0], xlim[10])
+        del xdata[:]
+        del ydata[:]
+        self.line1.set_data(xdata, ydata)
+        self.line2.set_data(xdata, ydata)
+
+    def set_callbacks(self, run_callback, datagen_callback):
+        self.ani = animation.FuncAnimation(fig, run_callback, datagen_callback, blit=False, interval=10,
+                                           repeat=False, init_func=self.init_animation)
+
+    def show(self):
+        plt.show()
+
 
 class SimplePIController:
     def __init__(self, Kp, Ki):
@@ -62,9 +120,10 @@ def telemetry(sid, data):
         # The current image from the center camera of the car
         imgString = data["image"]
         image = Image.open(BytesIO(base64.b64decode(imgString)))
-        image = scipy.misc.imresize(image, 50)
+        npimage = scipy.misc.imresize(image, (80, 160))
+        # npimage = image
         # Perform the same preprocessing we performed on the training here
-        image_array = np.asarray(image)
+        image_array = np.asarray(npimage)
 
         steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
         throttle = controller.update(float(speed))
