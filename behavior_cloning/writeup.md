@@ -8,7 +8,6 @@
 [combined_data_distribution]: ./report_imgs/combined_data_distribution.png "Combined Data Distribution"
 [network_architecture]: ./report_imgs/model.png "Nvidia Model"
 [track1_conv2d_5_layer]: ./report_imgs/track1_conv2d_5_layers.gif "Track 1 Conv2d_5"
-[track1_final_run]: ./report_imgs/track1_final_run.gif "Track 1 Final Run"
 [track2_conv2d_5_layer]: ./report_imgs/track2_conv2d_5_layers.gif "Track 2 Conv2d_5"
 [track2_final_run]: ./report_imgs/track2_final_run.gif "Track 2 Final Run"
 
@@ -117,7 +116,8 @@ One of the biggest problem with this particular project was the overfitting. Wit
 
 # Layer Visualization
 ## Track 1
-![alt text][track1_final_run] ![alt text][track1_conv2d_5_layer]
+
+![track1_final_run](http://imgur.com/a/qNbvO) ![track1_layers](http://imgur.com/a/qNbvO)
 
 ## Track 2
 ![alt text][track2_final_run] ![alt text][track2_conv2d_5_layer]
