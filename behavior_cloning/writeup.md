@@ -14,6 +14,7 @@
 [flip_image]: ./report_imgs/flipped.png "Flipped Image"
 [track1_model_loss]: ./report_imgs/track1_model_loss.png "Track 1 Model Loss"
 [track2_model_loss]: ./report_imgs/track2_model_loss.png "Track 1 Model Loss"
+[track2_recovery]: ./report_imgs/track2_recovery.gif "Track 2 Recovery Img"
 
 After tackling the lane line detection and the traffic sign classification projects from Udacity, the third project to be tackled was another completely different project in terms of what it achieves. The project was centered around the concept of Behavior cloning which meant that we teach a Neural Network model to do a certain task by showing it how it is to be done. The concept is very similar to how you teach babies or even adults in some cases to do certain things.
 
@@ -87,6 +88,10 @@ For track 1, I decided against using explicit recovery images. My goal was to ge
 
 I drove about 5 laps each of track 1 and 5 laps of track 2. Combined with the Sample training images, the augmentation of the images with steering angles either < -0.025 or > 0.025 to about 20 times proved to be enough data.
 
+#### Recovery Image for Track 2 where car was having trouble
+The car was having trouble in the following location and hence I provided only these specific recovery images. These are mainly for the car to avoid the long poles on track 2.
+![alt text][track2_recovery]
+
 #### Using Keras Image Augmentation Generator
 I tried using the Keras Image Augmentation Generator but constantly ran into trouble with it. Keras Image Augmentation generator is a generator which allows about 10 different image augmentation techniques. The one which I really wanted to try out was ZCA whitening. However, for ZCA whitening and std_normalization of the images, the generator had to fit the entire training data which wasn't possible and keras would constantly run out of memory. So I decided to ditch this method and write my own augmentation methods.
 
@@ -123,6 +128,10 @@ After reading a lot of material, I decided to use the Nvidia Model for this beha
 I also used a BatchNormalization layer after the Lambda layers. Along with that I also used L2 regularization on the layers which is not used on the nvidia model. The reason for doing this was because early on I found that since the track was relatively straight on track1 and the scenery was relatively similar, overfitting was happening very soon. It was important to keep it down.
 
 # Network Architecture & Parameters
+The nVidia model consists of 9 layers, including a normalization layer, 5 convolutional Layers and 3 fully connected layers. Although the Nvidia model uses YUV planes for the image, I decided to keep it at RGB to keep the problem simple to begin with.
+
+The convolutional layers in the nvidia model are designed to perform feature extraction and these were designed by nvidia empirically by experimentation by trying out varied layer configurations. The model uses strided convolutions in the first three convolutional layers with 2x2 stride and a 5x5 kernel and a non-strided convolution with a 3x3 kernel size in the last two convolutional layers.
+
 ![alt text][network_architecture]
 
 - *Batch Size*: I chose the batch size to be 512. I had a lot of training images so to keep training times a little lower I chose a higher batch size. I also experimented with 256, 128, 64 & 32 batch sizes and got higher validation loss.

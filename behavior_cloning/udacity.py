@@ -23,6 +23,9 @@ def display_flipped_image(images, steering_angles):
     fig.tight_layout()
     plt.show()
 
+def display_sample_images(df):
+    
+
 def main():
     df = read_training_data("track1")
     df = rearrange_and_augment_dataframe(df, shuffle_data=True)
