@@ -1,33 +1,31 @@
-import csv
-import cv2
-import numpy as np
-from keras.models import Sequential
-from keras.layers import Flatten, Dense
+from driverless import *
 
-lines = []
-with open('sample_training_data/driving_log.csv') as csvfile:
-    reader = csv.reader(csvfile)
-    for line in reader:
-        lines.append(line)
+def display_change_brightness_graph(images, steering_angles):
+    plt.subplots(figsize=(20, 5))
+    for i, img in enumerate(images):
+        plt.subplot(2, 5, i+1)
+        plt.axis('off')
+        plt.title("Steering: {:.4f}".format(steering_angles[i]))
+        plt.imshow(img)
+    plt.show()
 
-images = []
-measurements = []
-for line in lines[1:]:
-    source_path = line[0]
-    filename = source_path.split('/')[-1]
-    current_path = 'sample_training_data/IMG/' + filename
-    image = cv2.imread(current_path)
-    images.append(image)
-    measurements.append(float(line[3]))
+def main():
+    df = read_training_data("track1")
+    df = rearrange_and_augment_dataframe(df, shuffle_data=True)
 
-X_train = np.array(images)
-y_train = np.array(measurements)
+    # Get the first 10 images
+    df_first_10 = df[1:11]
 
-model = Sequential()
-model.add(Flatten(input_shape=(160, 320, 3)))
-model.add(Dense(1))
+    images = []
+    angles = []
+    for i, row in df_first_10.iterrows():
+        img = read_image(row.image)
+        steering_angle = row.steering_angle
+        img = change_brightness(img)
+        images.append(img)
+        angles.append(steering_angle)
 
-model.compile(loss='mse', optimizer='adam')
-model.fit(X_train, y_train, validation_split=0.2, shuffle=True, epochs=3)
+    display_change_brightness_graph(images, angles)
 
-model.save('model.h5')
+if __name__ == "__main__":
+    main()

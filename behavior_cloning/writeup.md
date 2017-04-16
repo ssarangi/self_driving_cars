@@ -10,6 +10,7 @@
 [track1_conv2d_5_layer]: ./report_imgs/track1_conv2d_5_layers.gif "Track 1 Conv2d_5"
 [track2_conv2d_5_layer]: ./report_imgs/track2_conv2d_5_layers.gif "Track 2 Conv2d_5"
 [track2_final_run]: ./report_imgs/track2_final_run.gif "Track 2 Final Run"
+[change_brightness]: ./report_imgs/change_brightness.png "Change Brightness Augmentation"
 
 [image2]: ./examples/placeholder.png "Grayscaling"
 [image3]: ./examples/placeholder_small.png "Recovery Image"
@@ -86,6 +87,12 @@ below.
 
 Since this would have been a lot of data all the augmentation was done while the network was running. I used Pandas DataFrames to generate augmentation by storing columns with the augmentation techniques and during training these were read and the techniques applied appropriately.
 
+#### Change Brightness
+![alt text][change_brightness]
+
+#### Flip Image
+
+
 #### Track 1 - Fastest Mode (Less Graphics)
 I drove around 2 laps on this track along the straight path and then took a U-turn to drive around in the reverse direction for 2 more laps.
 The data distribution for this data looked like this looked very similar to the sample training data provided since the road architecture is still the same.
@@ -117,7 +124,7 @@ One of the biggest problem with this particular project was the overfitting. Wit
 # Layer Visualization
 ## Track 1
 
-![track1_final_run](http://imgur.com/a/qNbvO) ![track1_layers](http://imgur.com/a/qNbvO)
+![track1_final_run](http://imgur.com/vGNh8vR) ![track1_layers](http://imgur.com/a/qNbvO)
 
 ## Track 2
 ![alt text][track2_final_run] ![alt text][track2_conv2d_5_layer]

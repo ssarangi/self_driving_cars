@@ -24,6 +24,8 @@ import matplotlib.pyplot as plt
 import argparse
 import json
 
+import random
+
 matplotlib.style.use('ggplot')
 
 ########################### Utilities #########################################
@@ -126,14 +128,9 @@ def read_image(filename):
     return img
 
 def change_brightness(img):
-    change_pct = random.uniform(0.4, 1.2)
-
-    # Change to HSV so as to change the brightness
-    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
-    hsv[:, :, 2] = hsv[:,:,2] * change_pct
-
-    # Convert back to RGB
-    img = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+    change_pct = int(random.uniform(0, 100))
+    mask = (255 - img) < change_pct
+    img = np.where((255 - img) < change_pct, 255, img + change_pct)
     return img
 
 def read_csv(filename, cols):
@@ -290,6 +287,8 @@ def rearrange_and_augment_dataframe(df, shuffle_data):
     BRIGHTNESS_AUG_FACTOR = 20
     brightness_df = brightness_df.append([brightness_df]*BRIGHTNESS_AUG_FACTOR, ignore_index=True)
     brightness_df.steering_angle = brightness_df.steering_angle + (np.random.uniform(-1, 1)/30.0)
+    brightness_df.augmentation = True
+    brightness_df.techniques = "brightness"
 
     new_df = pd.concat([center_df, left_df, right_df, flipped_center, brightness_df])
 
