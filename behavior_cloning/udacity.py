@@ -27,17 +27,18 @@ def display_original_image():
     cols = ['center_image', 'left_image', 'right_image', 'steering_angle', 'throttle', 'brake', 'speed']
     df = pd.read_csv('data/track1_1/driving_log.csv', names=cols)
     # Get 3 rows of data and display them
-    print(len(df))
     idx = np.random.randint(1000, size=3)
-    print(idx)
     ndf = df.ix[idx]
 
-    fig, axs = plt.subplots(3, 3, figsize=(5, 5))
+    fig, axs = plt.subplots(3, 3, figsize=(10, 10))
     i = 0
     for idx, row in ndf.iterrows():
-        axs[i][0].imshow(read_image(row['left_image']))
-        axs[i][1].imshow(read_image(row['center_image']))
-        axs[i][2].imshow(read_image(row['right_image']))
+        img1 = read_image(row['left_image'])
+        img2 = read_image(row['center_image'])
+        img3 = read_image(row['right_image'])
+        axs[i][0].imshow(img1)
+        axs[i][1].imshow(img2)
+        axs[i][2].imshow(img3)
 
         steering_angle = float(row['steering_angle'])
         axs[i][0].set_title("Left Image Angle: {:.4f}".format(steering_angle + 0.25))
