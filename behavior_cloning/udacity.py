@@ -23,8 +23,10 @@ def display_flipped_image(images, steering_angles):
     fig.tight_layout()
     plt.show()
 
-def display_sample_images(df):
-    
+def display_original_image():
+    df = pd.read_csv('data/track1_1/driving_log.csv')
+    # Get 3 rows of data and display them
+    np.random.random()
 
 def main():
     df = read_training_data("track1")
