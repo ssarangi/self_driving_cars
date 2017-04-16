@@ -15,13 +15,6 @@
 [track1_model_loss]: ./report_imgs/track1_model_loss.png "Track 1 Model Loss"
 [track2_model_loss]: ./report_imgs/track2_model_loss.png "Track 1 Model Loss"
 
-[image2]: ./examples/placeholder.png "Grayscaling"
-[image3]: ./examples/placeholder_small.png "Recovery Image"
-[image4]: ./examples/placeholder_small.png "Recovery Image"
-[image5]: ./examples/placeholder_small.png "Recovery Image"
-[image6]: ./examples/placeholder_small.png "Normal Image"
-[image7]: ./examples/placeholder_small.png "Flipped Image"
-
 After tackling the lane line detection and the traffic sign classification projects from Udacity, the third project to be tackled was another completely different project in terms of what it achieves. The project was centered around the concept of Behavior cloning which meant that we teach a Neural Network model to do a certain task by showing it how it is to be done. The concept is very similar to how you teach babies or even adults in some cases to do certain things.
 
 The theme of this project was to train a car to drive by itself autonomously. Udacity provided a simulator built in **Unity** for this purpose. The simulator has two tracks and has two modes it could work on.
