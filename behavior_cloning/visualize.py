@@ -37,7 +37,7 @@ def visualize_model_layer_output(filename, model, layer_name, output_folder):
 
     conv_features = model2.predict(img)
     print(filename)
-    
+
     # plot features
     fig, _ = plt.subplots(figsize=(5, 5))
     for i in range(16):
@@ -66,9 +66,9 @@ def args_definition():
 def main():
     args = args_definition()
     model = load_model(args.model)
-    files = os.listdir('runs/track2')
+    files = os.listdir('runs/track1_final_run/')
     for f in files:
-        visualize_model_layer_output('runs/track2/' + f, model, args.layer, 'runs/track2_layers/')
+        visualize_model_layer_output('runs/track1_final_run/' + f, model, args.layer, 'runs/track1_layers/')
 
 if __name__ == "__main__":
     main()

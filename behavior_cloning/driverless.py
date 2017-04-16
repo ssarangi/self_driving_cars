@@ -72,9 +72,6 @@ def nvidia_end_to_end(shape, l2_regularization_scale):
     model.add(Lambda(lambda x: (x / 255.0) - 0.5))
     model.add(BatchNormalization(axis=1, input_shape=shape))
 
-    model.add(Convolution2D(3,(1, 1), border_mode='valid', activation='elu',
-              name='conv0', init='he_normal'))
-
     model.add(Convolution2D(16, (3, 3), padding='valid', strides=(2, 2), activation='elu',
               kernel_regularizer=l2(l2_regularization_scale),
               bias_regularizer=l2(l2_regularization_scale)))

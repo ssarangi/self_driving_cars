@@ -3,8 +3,15 @@
 [//]: # (Image References)
 
 [sample_data_distribution]: ./report_imgs/sample_data_distribution.png "Udacity's Sample Data Distribution"
+[track1_data_distribution]: ./report_imgs/track_1_data_distribution.png "Track 1 Data Distribution"
 [track2_data_distribution]: ./report_imgs/track_2_data_distribution.png "Track 2 Data Distribution"
 [combined_data_distribution]: ./report_imgs/combined_data_distribution.png "Combined Data Distribution"
+[network_architecture]: ./report_imgs/model.png "Nvidia Model"
+[track1_conv2d_5_layer]: ./report_imgs/track1_conv2d_5_layers.gif "Track 1 Conv2d_5"
+[track1_final_run]: ./report_imgs/track1_final_run.gif "Track 1 Final Run"
+[track2_conv2d_5_layer]: ./report_imgs/track2_conv2d_5_layers.gif "Track 2 Conv2d_5"
+[track2_final_run]: ./report_imgs/track2_final_run.gif "Track 2 Final Run"
+
 [image2]: ./examples/placeholder.png "Grayscaling"
 [image3]: ./examples/placeholder_small.png "Recovery Image"
 [image4]: ./examples/placeholder_small.png "Recovery Image"
@@ -67,18 +74,7 @@ Udacity provided sample data for people to train their network on. This consiste
 ![alt text][sample_data_distribution]
 
 ### Training Data from Manual Training
-#### Track 1 - Fastest Mode (Less Graphics)
-I drove around 2 laps on this track along the straight path and then took a U-turn to drive around in the reverse direction for 2 more laps.
-The data distribution for this data looked like this looked very similar to the sample training data provided since the road architecture is still the same.
-
-#### Track 1 - High Graphics Mode
-Similar to the first training data I trained 4 laps on the same track to account for better graphics, shadows etc on this track. Again the data distribution doesn't change with this graphics mode.
-
-
-#### Combined Data Distribution
-Finally I combined all these training data into a single dataset to see how the car performed but before I did that I wanted to visualize what that data looked like so that I get a good idea of what biases it has.
-
-# Dataset Augmentation
+### Dataset Augmentation
 
 Data Augmentation is a big part of the experiments we carry out with this project. Although,
 gathering training data is not very difficult with the simulator, still driving around laps
@@ -89,30 +85,50 @@ below.
 - Flip the center image & the steering angle
 - Generate about 20 times the data by changing brightness of all center, left & right images for steering angles less than -0.025 and greater than 0.025.
 
-Since this would have been a lot of data all the augmentation was done while the network was running. I used Pandas Dataframes to generate augmentation by storing columns with the augmentation techniques and during training these were read and the techniques applied appropriately.
+Since this would have been a lot of data all the augmentation was done while the network was running. I used Pandas DataFrames to generate augmentation by storing columns with the augmentation techniques and during training these were read and the techniques applied appropriately.
+
+#### Track 1 - Fastest Mode (Less Graphics)
+I drove around 2 laps on this track along the straight path and then took a U-turn to drive around in the reverse direction for 2 more laps.
+The data distribution for this data looked like this looked very similar to the sample training data provided since the road architecture is still the same.
+
+#### Track 1 - High Graphics Mode
+Similar to the first training data I trained 4 laps on the same track to account for better graphics, shadows etc on this track. Again the data distribution doesn't change with this graphics mode.
+
+![alt text][track1_data_distribution]
+
+#### Track 2 - Data Distribution
+
+![alt text][track2_data_distribution]
+
+#### Combined Data Distribution
+Finally I combined all these training data into a single dataset to see how the car performed but before I did that I wanted to visualize what that data looked like so that I get a good idea of what biases it has.
+
+![alt text][combined_data_distribution]
 
 # Network Selection
-After reading a lot of material, I decided to use the Nvidia Model for this behavior training.
+After reading a lot of material, I decided to use the Nvidia Model for this behavior training. Comma.ai also has a model which is a good model to be used for this purpose. However, I made a few modifications to the Nvidia model to suit it for this project.
+I also used a BatchNormalization layer after the Lambda layers. Along with that I also used L2 regularization on the layers which is not used on the nvidia model. The reason for doing this was because early on I found that since the track was relatively straight on track1 and the scenery was relatively similar, overfitting was happening very soon. It was important to keep it down.
 
 # Network Architecture
+![alt text][network_architecture]
 
 # Overfitting
 One of the biggest problem with this particular project was the overfitting. Within a very few epochs, the network would start overfitting.
 
 # Layer Visualization
+## Track 1
+![alt text][track1_final_run] ![alt text][track1_conv2d_5_layer]
+
+## Track 2
+![alt text][track2_final_run] ![alt text][track2_conv2d_5_layer]
 
 # Final Results
-## No Dataset Augmentation
-The car seemed to perform better on track 2 than on track 1 with no dataset augmentation.
+## Track 1
+[![Track 1 Final Result](report_imgs/track1_youtube.png)](https://www.youtube.com/watch?v=-GzA0qTAzWk "Track 1 Run")
 
-# Experiments
+## Track 2
+[![Track 2 Final Result](report_imgs/track2_youtube.png)](https://youtu.be/eooRnceSvno "Track 2 Run")
 
-## Experiment 1:
- - In this experiment, I merged both the left & right track training data.
-   Epochs = 10
-
-## Experiment 2:
- - Adding 0.25 to left Image & -0.25 to right image steering angles respectively.
 
 ## References:
 - https://medium.com/@ValipourMojtaba/my-approach-for-project-3-2545578a9319
