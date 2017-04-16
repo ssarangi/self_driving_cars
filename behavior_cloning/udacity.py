@@ -9,6 +9,20 @@ def display_change_brightness_graph(images, steering_angles):
         plt.imshow(img)
     plt.show()
 
+def display_flipped_image(images, steering_angles):
+    total_images = len(images)
+    fig, ax = plt.subplots(nrows=total_images, ncols=2, figsize=(5, 8))
+    for i, img in enumerate(images):
+        ax[i][0].axis('off')
+        ax[i][0].imshow(img)
+        ax[i][0].set_title("Original Angle: {:.4f}".format(steering_angles[i]))
+
+        ax[i][1].axis('off')
+        ax[i][1].set_title("Flipped Angle: {:.4f}".format(-1.0 * steering_angles[i]))
+        ax[i][1].imshow(flip_image(img))
+    fig.tight_layout()
+    plt.show()
+
 def main():
     df = read_training_data("track1")
     df = rearrange_and_augment_dataframe(df, shuffle_data=True)
@@ -25,7 +39,18 @@ def main():
         images.append(img)
         angles.append(steering_angle)
 
-    display_change_brightness_graph(images, angles)
+    # display_change_brightness_graph(images, angles)
+
+    df_10 = df[20:25]
+    images = []
+    angles = []
+    for i, row in df_10.iterrows():
+        img = read_image(row.image)
+        steering_angle = row.steering_angle
+        images.append(img)
+        angles.append(steering_angle)
+
+    display_flipped_image(images, angles)
 
 if __name__ == "__main__":
     main()
