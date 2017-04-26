@@ -1,4 +1,7 @@
 # The main file for Advanced Lane Line Detection
+# python lane_line_detection.py --pipeline video --file challenge_video.mp4
+# python lane_line_detection.py --pipeline test
+# python lane_line_detection.py --pipeline image --file test_images/straight_lines1.jpg
 import numpy as np
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
@@ -9,11 +12,14 @@ import cv2
 import pickle
 import logging
 import typing
-from experiment import *
+from PIL import Image
+# from experiment import *
+from moviepy.editor import VideoFileClip
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 matplotlib.style.use('ggplot')
 
+ARGS = None
 #################################### Setup Logging ########################################
 BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = range(8)
 
@@ -68,6 +74,7 @@ class ColoredLogger(logging.Logger):
 
 logging.setLoggerClass(ColoredLogger)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 DEBUG = False
 
@@ -136,68 +143,10 @@ class Utils:
         image.shape = (h, w, 3)
         return image
 
-class ImageWrapper:
-    def __init__(self, filename: str):
-        self._distored_img = Utils.read_image(filename)
-        self._undistorted_img = None
-        self._grayscale_img = None
-        self._roi_overlay = None
-        self._perspective_transformed = None
-        self._perspective_matrix = None
-        self._inverse_matrix = None
-        self.stages = []
-        self.stages.append(self._distored_img)
-
-    @property
-    def undistorted(self):
-        return self._undistorted_img
-
-    @undistorted.setter
-    def undistorted(self, img):
-        self._undistorted_img = img
-        self.stages.append(self.undistorted)
-        self.grayscale = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-
-    @property
-    def distorted(self):
-        return self._distored_img
-
-    @property
-    def grayscale(self):
-        return self._grayscale_img
-
-    @grayscale.setter
-    def grayscale(self, img):
-        self._grayscale_img = img
-
-    @property
-    def roi_overlay(self):
-        return self._roi_overlay
-
-    @roi_overlay.setter
-    def roi_overlay(self, img):
-        self._roi_overlay = img
-        self.stages.append(self._roi_overlay)
-
-    @property
-    def perspective_transform(self):
-        return self._perspective_transformed
-
-    @perspective_transform.setter
-    def perspective_transform(self, img):
-        self._perspective_transformed = img
-        self.stages.append(img)
-
-    def set_perspective_matrices(self, matrix, inv_matrix):
-        self._perspective_matrix = matrix
-        self._inverse_matrix = inv_matrix
-
-    @property
-    def shape(self):
-        if self._undistorted_img is None:
-            return (self._distored_img.shape[1], self._distored_img.shape[0])
-        else:
-            return (self._undistorted_img.shape[1], self._undistorted_img.shape[0])
+    @staticmethod
+    def merge_images(*imgs):
+        new_im = np.concatenate(imgs, axis=1)
+        return new_im
 
 class CameraCalibration:
     def __init__(self, chessboard_size, args):
@@ -255,9 +204,9 @@ class CameraCalibration:
         dist_pickle["dist"] = self.dist
         pickle.dump(dist_pickle, open("calibration.p", "wb"))
 
-    def unwarp(self, img : ImageWrapper, display_img = False):
+    def unwarp(self, img, display_img = False):
         if self.camera_calibrated_:
-            dst = cv2.undistort(img.distorted, self.mtx, self.dist, None, self.mtx)
+            dst = cv2.undistort(img, self.mtx, self.dist, None, self.mtx)
 
             if display_img:
                 fig, (ax1, ax2) = plt.subplots(1, 2)
@@ -275,9 +224,13 @@ class CameraCalibration:
         raise Exception("Unwarp can only be called when camera is calibrated")
 
 class RegionOfInterest:
+    def __init__(self):
+        self.transformation_matrix = None
+        self.inverse_matrix = None
+
     @staticmethod
     def _define_source_polygon(img):
-        img_size = img.shape
+        img_size = (img.shape[1], img.shape[0])
         source_transformation = np.float32(
             [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
              [((img_size[0] / 6) - 10), img_size[1]],
@@ -288,7 +241,7 @@ class RegionOfInterest:
 
     @staticmethod
     def _define_destination_polygon(img):
-        img_size = img.shape
+        img_size = (img.shape[1], img.shape[0])
         destination_transformation = np.float32(
             [[(img_size[0] / 4), 0],
              [(img_size[0] / 4), img_size[1]],
@@ -297,8 +250,7 @@ class RegionOfInterest:
 
         return destination_transformation
 
-    @staticmethod
-    def warp_perspective_to_top_down(img : ImageWrapper):
+    def warp_perspective_to_top_down(self, img):
         """
         Calculate the inversed transformation matrix and warped top down transform image
         :param src: source points where warp transforms from
@@ -306,54 +258,68 @@ class RegionOfInterest:
         :param dst: destination points where warp transforms to
         :return: the transformation matrix inversed, warped top-down binary image
         """
-        img_size = img.shape
+        img_size = (img.shape[1], img.shape[0])
         src = RegionOfInterest._define_source_polygon(img)
         dst = RegionOfInterest._define_destination_polygon(img)
         transformation_matrix = cv2.getPerspectiveTransform(src, dst)  # the transform matrix
         transformation_matrix_inverse = cv2.getPerspectiveTransform(dst, src)  # the transform matrix inverse
-        perspective_top_down = cv2.warpPerspective(img.undistorted, transformation_matrix, (img_size))  # warp image to a top-down view
+        perspective_top_down = cv2.warpPerspective(img, transformation_matrix, (img_size))  # warp image to a top-down view
         if DEBUG:
             plt.title("Perspective Top Down")
             plt.imshow(perspective_top_down)
             plt.show()
 
-        return transformation_matrix, transformation_matrix_inverse, perspective_top_down
+        self.transformation_matrix = transformation_matrix
+        self.inverse_matrix = transformation_matrix_inverse
+        return perspective_top_down
+
+    def top_down_to_original(self, img, size_img):
+        return cv2.warpPerspective(img, self.inverse_matrix, tuple(list(size_img.shape[1::-1])))
 
     @staticmethod
-    def polygon_overlay_img(img : ImageWrapper):
+    def polygon_overlay_img(img):
         """
         Create green polygon and overlay on undistorted image.
         """
         src = RegionOfInterest._define_source_polygon(img)
         dst = RegionOfInterest._define_destination_polygon(img)
-        polygon_src_overlay_img = np.copy(img.undistorted)
-        polygon_src_undistored_image = cv2.line(polygon_src_overlay_img, tuple(src[0]), tuple(src[1]), [0, 255, 0], 3)
-        polygon_src_undistored_image = cv2.line(polygon_src_undistored_image, tuple(src[1]), tuple(src[2]), [0, 255, 0], 3)
-        polygon_src_undistored_image = cv2.line(polygon_src_undistored_image, tuple(src[2]), tuple(src[3]), [0, 255, 0], 3)
-        polygon_src_undistored_image = cv2.line(polygon_src_undistored_image, tuple(src[3]), tuple(src[0]), [0, 255, 0], 3)
+        polygon_src_overlay_img = np.copy(img)
+        src_transformation_img = cv2.line(polygon_src_overlay_img, tuple(src[0]), tuple(src[1]), [0, 255, 0], 3)
+        src_transformation_img = cv2.line(src_transformation_img, tuple(src[1]), tuple(src[2]), [0, 255, 0], 3)
+        src_transformation_img = cv2.line(src_transformation_img, tuple(src[2]), tuple(src[3]), [0, 255, 0], 3)
+        src_transformation_img = cv2.line(src_transformation_img, tuple(src[3]), tuple(src[0]), [0, 255, 0], 3)
 
-        polygon_dst_overlay_img = np.copy(img.undistorted)
-        polygon_dst_undistored_image = cv2.line(polygon_dst_overlay_img, tuple(dst[0]), tuple(dst[1]), [0, 255, 0], 3)
-        polygon_dst_undistored_image = cv2.line(polygon_dst_undistored_image, tuple(dst[1]), tuple(dst[2]), [0, 255, 0], 3)
-        polygon_dst_undistored_image = cv2.line(polygon_dst_undistored_image, tuple(dst[2]), tuple(dst[3]), [0, 255, 0], 3)
-        polygon_dst_undistored_image = cv2.line(polygon_dst_undistored_image, tuple(dst[3]), tuple(dst[0]), [0, 255, 0], 3)
+        polygon_dst_overlay_img = np.copy(img)
+        dst_transformation_img = cv2.line(polygon_dst_overlay_img, tuple(dst[0]), tuple(dst[1]), [0, 255, 0], 3)
+        dst_transformation_img = cv2.line(dst_transformation_img, tuple(dst[1]), tuple(dst[2]), [0, 255, 0], 3)
+        dst_transformation_img = cv2.line(dst_transformation_img, tuple(dst[2]), tuple(dst[3]), [0, 255, 0], 3)
+        dst_transformation_img = cv2.line(dst_transformation_img, tuple(dst[3]), tuple(dst[0]), [0, 255, 0], 3)
 
         if DEBUG:
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(25, 10))
             ax1.axis('off')
             ax2.axis('off')
-            ax1.imshow(polygon_src_undistored_image)
-            ax2.imshow(polygon_dst_undistored_image)
+            ax1.imshow(src_transformation_img)
+            ax2.imshow(dst_transformation_img)
             ax1.set_title("Src Region of Interest defined")
             ax2.set_title("Dst Region of Interest defined")
             plt.show()
 
-        return polygon_src_undistored_image, polygon_dst_undistored_image
+        return src_transformation_img, dst_transformation_img
 
 class Thresholder:
     @staticmethod
-    def abs_sobel_threshold(img, orient='x', sobel_kernel=3, thresh=(0, 255)):
-        grayscale = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    def simple_threshold(img, thresh=(0, 255)):
+        binary = np.zeros_like(img)
+        binary[(img > thresh[0]) & (img <= thresh[1])] = 1
+        return binary
+
+    @staticmethod
+    def abs_sobel_threshold(img, perform_grayscaling, orient='x', sobel_kernel=3, thresh=(0, 255)):
+        if perform_grayscaling:
+            grayscale = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        else:
+            grayscale = img
         dx, dy = (1, 0) if orient == 'x' else (0, 1)
         sobel = cv2.Sobel(grayscale, cv2.CV_64F, dx, dy, ksize=sobel_kernel)
         abs_sobel = np.absolute(sobel)
@@ -363,10 +329,13 @@ class Thresholder:
         return sxbinary
 
     @staticmethod
-    def mag_thresh(img, sobel_kernel=3, mag_thresh=(0, 255)):
+    def mag_thresh(img, perform_grayscaling, sobel_kernel=3, mag_thresh=(0, 255)):
         # Calculate gradient magnitude
         # Apply threshold
-        grayscale = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        if perform_grayscaling:
+            grayscale = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        else:
+            grayscale = img
         sobelx = cv2.Sobel(grayscale, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
         sobely = cv2.Sobel(grayscale, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
         abs_sobelxy = np.sqrt(sobelx ** 2 + sobely ** 2)
@@ -377,10 +346,13 @@ class Thresholder:
         return binary_output
 
     @staticmethod
-    def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi / 2)):
+    def dir_threshold(img, perform_grayscaling, sobel_kernel=3, thresh=(0, np.pi / 2)):
         # Calculate gradient direction
         # Apply threshold
-        grayscale = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        if perform_grayscaling:
+            grayscale = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        else:
+            grayscale = img
         sobelx = cv2.Sobel(grayscale, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
         sobely = cv2.Sobel(grayscale, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
         dir_gradient = np.arctan2(np.absolute(sobely), np.absolute(sobelx))
@@ -388,34 +360,318 @@ class Thresholder:
         binary_output[(dir_gradient >= thresh[0]) & (dir_gradient <= thresh[1])] = 1
         return binary_output
 
-def pipeline(imgs, args):
-    cameracalib = CameraCalibration(chessboard_size=(9, 6), args=args)
-    options = ExperimentManagerOptions()
-    options.overwrite_if_experiment_exists = True
-    experiment_manager = ExperimentManager(options)
-    experiment = experiment_manager.new_experiment(args.experiment)
+    @staticmethod
+    def combined_filters(img, perform_grayscaling, sobel_thresh : tuple, mag_thresh : tuple, dir_thresh : tuple):
+        if perform_grayscaling:
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        ksize = 3
+        gradx = Thresholder.abs_sobel_threshold(img, perform_grayscaling=False, orient='x', sobel_kernel=ksize, thresh=sobel_thresh)
+        grady = Thresholder.abs_sobel_threshold(img, perform_grayscaling=False, orient='y', sobel_kernel=ksize, thresh=sobel_thresh)
+        mag_binary = Thresholder.mag_thresh(img, perform_grayscaling=False, sobel_kernel=ksize, mag_thresh=mag_thresh)
+        dir_binary = Thresholder.dir_threshold(img, perform_grayscaling=False, sobel_kernel=ksize, thresh=dir_thresh)
 
-    for i, img in enumerate(imgs):
-        logger.info("Performing Distortion Correction on Image: %s" % i)
-        unwarped = cameracalib.unwarp(img, False)
+        combined = np.zeros_like(img)
+        combined[((gradx == 1) & (grady == 1)) | ((mag_binary == 1) & (dir_binary == 1))] = 1
+        return combined
 
-        distorted_undistored_img = Utils.display_images([img.distorted, unwarped], False, 1, 2, ["Distorted", "Undistorted"], fig_size=(15, 5))
+def window_mask(width, height, img_ref, center,level):
+    output = np.zeros_like(img_ref)
+    output[int(img_ref.shape[0]-(level+1)*height):int(img_ref.shape[0]-level*height),max(0,int(center-width/2)):min(int(center+width/2),img_ref.shape[1])] = 1
+    return output
 
-        experiment.add_image(distorted_undistored_img, "output", "distorted_undistorted_" + str(i) + ".png",
-                             "Unwarped Image from Camera Calibration",
-                             description="This is the image obtained from the camera calibration")
 
-        img.undistorted = unwarped
-        roi_img = RegionOfInterest.polygon_overlay_img(img)
-        img.roi_overlay = roi_img
-        transformation_matrix, inv_transformation_matrix, perspective_transformed_img = RegionOfInterest.warp_perspective_to_top_down(img)
-        img.perspective_transform = perspective_transformed_img
-        img.set_perspective_matrices(transformation_matrix, inv_transformation_matrix)
-        if DEBUG:
-            plt.imshow(img.perspective_transform)
-            plt.show()
+def find_window_centroids(warped, window_width, window_height, margin):
+    window_centroids = []  # Store the (left,right) window centroid positions per level
+    window = np.ones(window_width)  # Create our window template that we will use for convolutions
 
-    experiment_manager.to_markdown(args.experiment, args.experiment + ".md")
+    # First find the two starting positions for the left and right lane by using np.sum to get the vertical image slice
+    # and then np.convolve the vertical image slice with the window template
+
+    # Sum quarter bottom of image to get slice, could use a different ratio
+    l_sum = np.sum(warped[int(3 * warped.shape[0] / 4):, :int(warped.shape[1] / 2)], axis=0)
+    l_center = np.argmax(np.convolve(window, l_sum)) - window_width / 2
+    r_sum = np.sum(warped[int(3 * warped.shape[0] / 4):, int(warped.shape[1] / 2):], axis=0)
+    r_center = np.argmax(np.convolve(window, r_sum)) - window_width / 2 + int(warped.shape[1] / 2)
+
+    # Add what we found for the first layer
+    window_centroids.append((l_center, r_center))
+
+    # Go through each layer looking for max pixel locations
+    for level in range(1, (int)(warped.shape[0] / window_height)):
+        # convolve the window into the vertical slice of the image
+        image_layer = np.sum(
+            warped[int(warped.shape[0] - (level + 1) * window_height):int(warped.shape[0] - level * window_height), :],
+            axis=0)
+        conv_signal = np.convolve(window, image_layer)
+        # Find the best left centroid by using past left center as a reference
+        # Use window_width/2 as offset because convolution signal reference is at right side of window, not center of window
+        offset = window_width / 2
+        l_min_index = int(max(l_center + offset - margin, 0))
+        l_max_index = int(min(l_center + offset + margin, warped.shape[1]))
+        l_center = np.argmax(conv_signal[l_min_index:l_max_index]) + l_min_index - offset
+        # Find the best right centroid by using past right center as a reference
+        r_min_index = int(max(r_center + offset - margin, 0))
+        r_max_index = int(min(r_center + offset + margin, warped.shape[1]))
+        r_center = np.argmax(conv_signal[r_min_index:r_max_index]) + r_min_index - offset
+        # Add what we found for that layer
+        window_centroids.append((l_center, r_center))
+
+    return window_centroids
+
+def overlay_images(img1, img2):
+    assert img1.shape == img2.shape
+    overlay_img = np.zeros_like(img1)
+
+    overlay_img[(img1 == 1) | (img2 == 1)] = 1
+    return overlay_img
+
+def get_saturation_channel(img):
+    hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+    s = hls[:, :, 2]
+    return s
+
+class LaneFinder:
+    def __init__(self):
+        self._left_fit = None
+        self._right_fit = None
+        self._current_img = None
+
+    def full_lane_finding_step(self, binary_img):
+        height = binary_img.shape[0]
+
+        # Find the histogram for the bottom half of the image. WHY ????
+        # TODO: ssarangi - why do we need bottom half of image
+        histogram = np.sum(binary_img[binary_img.shape[0]//2:, :], axis=0)
+
+        # Create the output image to draw on
+        out_img = np.dstack((binary_img, binary_img, binary_img)) * 255
+
+        # Find the peak from the left and right halves of the image.
+        midpoint = histogram.shape[0] // 2
+        leftx_base = np.argmax(histogram[:midpoint])
+        rightx_base = midpoint + np.argmax(histogram[midpoint:])
+
+        # Number of Sliding Windows
+        nwindows = 9
+
+        # Set the height of the windows
+        window_height = height // nwindows
+
+        # Identify the x and y positions of all non-zero pixels
+        nonzero = binary_img.nonzero()
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+
+        # Current positions to be updated for each window
+        leftx_current = leftx_base
+        rightx_current = rightx_base
+
+        # Set the width of the windows +/- margin
+        margin = 100
+
+        # Set minimum number of pixels found to recenter window
+        minpix = 50
+
+        # Create empty lists to receive left and right lane pixel indices
+        left_lane_idxs = []
+        right_lane_idxs = []
+
+        # Step through the windows
+        i = 0
+        for window in range(nwindows):
+            # Identify window boundaries in x & y ( and right and left )
+            win_y_low = height - (window + 1) * window_height
+            win_y_high = height - window * window_height
+
+            win_xleft_low = leftx_current - margin
+            win_xleft_high = leftx_current + margin
+
+            win_xright_low = rightx_current - margin
+            win_xright_high = rightx_current + margin
+
+            # Draw the windows
+            cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
+            cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
+
+            # Identify the nonzero pixels in x & y within the window
+            good_left_idxs = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_xleft_low) & (nonzerox < win_xleft_high)).nonzero()[0]
+            good_right_idxs = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_xright_low) & (nonzerox < win_xright_high)).nonzero()[0]
+
+            # Append these indices to the lists
+            left_lane_idxs.append(good_left_idxs)
+            right_lane_idxs.append(good_right_idxs)
+
+            if len(good_left_idxs) > minpix:
+                leftx_current = np.int(np.mean(nonzerox[good_left_idxs]))
+
+            if len(good_right_idxs) > minpix:
+                rightx_current = np.int(np.mean(nonzerox[good_right_idxs]))
+
+        # Concatenate the array of indices
+        left_lane_idxs = np.concatenate(left_lane_idxs)
+        right_lane_idxs = np.concatenate(right_lane_idxs)
+
+        # Extract left and right line pixel positions
+        leftx = nonzerox[left_lane_idxs]
+        lefty = nonzeroy[left_lane_idxs]
+        rightx = nonzerox[right_lane_idxs]
+        righty = nonzeroy[right_lane_idxs]
+
+        # Fit a second order polynomial to each
+        left_fit = np.polyfit(lefty, leftx, 2)
+        right_fit = np.polyfit(righty, rightx, 2)
+
+        # Generate x and y values for plotting
+        ploty = np.linspace(0, height - 1, height)
+        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+        right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+
+        out_img[nonzeroy[left_lane_idxs], nonzerox[left_lane_idxs]] = [255, 0, 0]
+        out_img[nonzeroy[right_lane_idxs], nonzerox[right_lane_idxs]] = [0, 0, 255]
+        plt.plot(left_fitx, ploty, color='yellow')
+        plt.plot(right_fitx, ploty, color='yellow')
+        plt.xlim(0, 1280)
+        plt.ylim(720, 0)
+
+        self._left_fit = left_fit
+        self._right_fit = right_fit
+        self._current_img = binary_img
+        self.visualize(binary_img, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx, margin, ploty)
+        return left_fit, right_fit, binary_img
+
+    def partial_lane_finding_step(self, binary_img, left_fit, right_fit):
+        nonzero = binary_img.nonzero()
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+
+        margin = 100
+
+        left_lane_idxs = (
+        (nonzerox > (left_fit[0] * (nonzeroy ** 2) + left_fit[1] * nonzeroy + left_fit[2] - margin)) & (
+        nonzerox < (left_fit[0] * (nonzeroy ** 2) + left_fit[1] * nonzeroy + left_fit[2] + margin)))
+
+        right_lane_idxs = (
+        (nonzerox > (right_fit[0] * (nonzeroy ** 2) + right_fit[1] * nonzeroy + right_fit[2] - margin)) & (
+        nonzerox < (right_fit[0] * (nonzeroy ** 2) + right_fit[1] * nonzeroy + right_fit[2] + margin)))
+
+        # Again, extract left and right line pixel positions
+        leftx = nonzerox[left_lane_idxs]
+        lefty = nonzeroy[left_lane_idxs]
+        rightx = nonzerox[right_lane_idxs]
+        righty = nonzeroy[right_lane_idxs]
+        # Fit a second order polynomial to each
+        left_fit = np.polyfit(lefty, leftx, 2)
+        right_fit = np.polyfit(righty, rightx, 2)
+        # Generate x and y values for plotting
+        ploty = np.linspace(0, binary_img.shape[0] - 1, binary_img.shape[0])
+        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+        right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+
+        self._left_fit = left_fitx
+        self._right_fit = right_fitx
+        self._current_img = binary_img
+
+        self.visualize(binary_img, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx, margin, ploty)
+        return left_fitx, right_fitx, binary_img
+
+    def visualize(self, binary_warped, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx,
+                  margin, ploty):
+        # Create an image to draw on and an image to show the selection window
+        out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
+        window_img = np.zeros_like(out_img)
+        # Color in left and right line pixels
+        out_img[nonzeroy[left_lane_idxs], nonzerox[left_lane_idxs]] = [255, 0, 0]
+        out_img[nonzeroy[right_lane_idxs], nonzerox[right_lane_idxs]] = [0, 0, 255]
+
+        # Generate a polygon to illustrate the search window area
+        # And recast the x and y points into usable format for cv2.fillPoly()
+        left_line_window1 = np.array([np.transpose(np.vstack([left_fitx - margin, ploty]))])
+        left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx + margin, ploty])))])
+        left_line_pts = np.hstack((left_line_window1, left_line_window2))
+        right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - margin, ploty]))])
+        right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + margin, ploty])))])
+        right_line_pts = np.hstack((right_line_window1, right_line_window2))
+
+        # Draw the lane onto the warped blank image
+        cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
+        cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
+        result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
+        # plt.imshow(result)
+        # plt.plot(left_fitx, ploty, color='yellow')
+        # plt.plot(right_fitx, ploty, color='yellow')
+        # plt.xlim(0, 1280)
+        # plt.ylim(720, 0)
+        # plt.show()
+
+    def overlay_lane(self, image, left_fit, right_fit, transform):
+        left_ys = np.linspace(0, 100, num=101) * 7.2
+        left_xs = left_fit[0] * left_ys ** 2 + left_fit[1] * left_ys + left_fit[2]
+
+        right_ys = np.linspace(0, 100, num=101) * 7.2
+        right_xs = right_fit[0] * right_ys ** 2 + right_fit[1] * right_ys + right_fit[2]
+
+        color_warp = np.zeros_like(image).astype(np.uint8)
+
+        pts_left = np.array([np.transpose(np.vstack([left_xs, left_ys]))])
+        pts_right = np.array([np.flipud(np.transpose(np.vstack([right_xs, right_ys])))])
+        pts = np.hstack((pts_left, pts_right))
+
+        cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
+        newwarp = transform.top_down_to_original(color_warp, image)
+
+        return cv2.addWeighted(image, 1, newwarp, 0.3, 0)
+
+lane_finder = LaneFinder()
+roi = RegionOfInterest()
+
+def pipeline(img):
+    global ARGS
+
+    cameracalib = CameraCalibration(chessboard_size=(9, 6), args=ARGS)
+    # Undistort the image
+    distorted = img
+
+    logger.info("Performing Distortion Correction on Image:")
+    unwarped = cameracalib.unwarp(img, False)
+
+    saturation_channel_img = get_saturation_channel(unwarped)
+    binary = Thresholder.simple_threshold(saturation_channel_img, thresh=(90, 255))
+    # plt.imshow(binary, cmap='gray')
+    # plt.title("Saturation Image")
+    # plt.show()
+
+    # Perform the Thresholding on the image
+    thresholded = Thresholder.combined_filters(unwarped, True, (50, 200), (50, 235), (-0.5, 1.1))
+
+    # plt.imshow(thresholded, cmap='gray')
+    # plt.title("Thresholded Image")
+    # plt.show()
+
+    overlay_img = overlay_images(binary, thresholded)
+    # plt.imshow(overlay_img, cmap='gray')
+    # plt.title("Overlay Image")
+    # plt.show()
+
+    if DEBUG:
+        src_transformation_img, dst_transformation_img = RegionOfInterest.polygon_overlay_img(img)
+        Utils.display_images([src_transformation_img, dst_transformation_img], rows=1, cols=2, is_grayscale=False, title="test")
+
+    perspective_transformed_img = roi.warp_perspective_to_top_down(overlay_img)
+    mpimg.imsave('binary.png', perspective_transformed_img)
+
+    # plt.imshow(perspective_transformed_img, cmap='gray')
+    # plt.title("Perspective Transformed Image")
+    # plt.show()
+
+    left_fit, right_fit, binary_img = lane_finder.full_lane_finding_step(perspective_transformed_img)
+
+    final_img = lane_finder.overlay_lane(unwarped, left_fit, right_fit, roi)
+
+    plt.imshow(final_img)
+    plt.show()
+
+    # all =  Utils.merge_images(unwarped, thresholded, perspective_transformed_img)
+    return overlay_img
 
 def test_images_pipeline():
     test_files = os.listdir("test_images")
@@ -423,25 +679,40 @@ def test_images_pipeline():
 
     test_imgs = []
     for file in test_files:
-        img = ImageWrapper(file)
+        img = Utils.read_image(file)
         test_imgs.append(img)
 
     return test_imgs
 
 def argument_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pipeline", help="The pipeline to use.", type=str, choices=["test, video"], default="test")
+    parser.add_argument("--pipeline", help="The pipeline to use.", type=str, choices=["test", "image", "video"], default="test")
     parser.add_argument("--experiment", help="The experiment name to try", type=str)
+    parser.add_argument("--file", help="Video / Image file to use", type=str)
 
     args = parser.parse_args()
     return args
 
 def main():
+    global ARGS
     args = argument_parser()
 
+    ARGS = args
     if args.pipeline == "test":
         imgs = test_images_pipeline()
-        pipeline(imgs, args)
+        for img in imgs:
+            pipeline(img)
+    elif args.pipeline == "image":
+        img = Utils.read_image(args.file)
+        result = pipeline(img)
+        # plt.figure(figsize=(25, 10))
+        # plt.axis('off')
+        # plt.imshow(result)
+        # plt.show()
+    elif args.pipeline == "video":
+        clip = VideoFileClip(args.file)
+        output_clip = clip.fl_image(pipeline)
+        output_clip.write_videofile('output.mp4', audio=False)
 
 if __name__ == "__main__":
     main()
