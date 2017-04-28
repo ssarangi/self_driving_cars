@@ -13,6 +13,8 @@ import pickle
 import logging
 import typing
 from PIL import Image
+from PIL import ImageDraw
+from PIL import ImageFont
 # from experiment import *
 from moviepy.editor import VideoFileClip
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
@@ -76,12 +78,18 @@ logging.setLoggerClass(ColoredLogger)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 
-DEBUG = False
+DEBUG = True
 
 class Utils:
     @staticmethod
+    def plot_binary(binary_img):
+        new_img = np.dstack((binary_img, binary_img, binary_img)) * 255
+        plt.imshow(new_img)
+
+    @staticmethod
     def read_image(filename: str):
-        return mpimg.imread(filename)
+        # return mpimg.imread(filename)
+        return cv2.imread(filename)
 
     @staticmethod
     def display_images(imgs, is_grayscale, rows, cols, title, fig_size=(5, 5)):
@@ -147,6 +155,16 @@ class Utils:
     def merge_images(*imgs):
         new_im = np.concatenate(imgs, axis=1)
         return new_im
+
+    @staticmethod
+    def overlay_text(image, text, pos=(0, 0), color=(255, 255, 255)):
+        image = Image.fromarray(image)
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.truetype("./fonts/liberation-sans.ttf", 64)
+        draw.text(pos, text, color, font=font)
+        image = np.asarray(image)
+
+        return image
 
 class CameraCalibration:
     def __init__(self, chessboard_size, args):
@@ -374,49 +392,23 @@ class Thresholder:
         combined[((gradx == 1) & (grady == 1)) | ((mag_binary == 1) & (dir_binary == 1))] = 1
         return combined
 
-def window_mask(width, height, img_ref, center,level):
-    output = np.zeros_like(img_ref)
-    output[int(img_ref.shape[0]-(level+1)*height):int(img_ref.shape[0]-level*height),max(0,int(center-width/2)):min(int(center+width/2),img_ref.shape[1])] = 1
-    return output
+    @staticmethod
+    def color_threshold(img):
+        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
 
+        yellow = cv2.inRange(hsv, (20, 100, 100), (50, 255, 255))
 
-def find_window_centroids(warped, window_width, window_height, margin):
-    window_centroids = []  # Store the (left,right) window centroid positions per level
-    window = np.ones(window_width)  # Create our window template that we will use for convolutions
+        sensitivity_1 = 68
+        white = cv2.inRange(hsv, (0, 0, 255 - sensitivity_1), (255, 20, 255))
 
-    # First find the two starting positions for the left and right lane by using np.sum to get the vertical image slice
-    # and then np.convolve the vertical image slice with the window template
+        sensitivity_2 = 60
+        hsl = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+        white_2 = cv2.inRange(hsl, (0, 255 - sensitivity_2, 0), (255, 255, sensitivity_2))
+        white_3 = cv2.inRange(img, (200, 200, 200), (255, 255, 255))
 
-    # Sum quarter bottom of image to get slice, could use a different ratio
-    l_sum = np.sum(warped[int(3 * warped.shape[0] / 4):, :int(warped.shape[1] / 2)], axis=0)
-    l_center = np.argmax(np.convolve(window, l_sum)) - window_width / 2
-    r_sum = np.sum(warped[int(3 * warped.shape[0] / 4):, int(warped.shape[1] / 2):], axis=0)
-    r_center = np.argmax(np.convolve(window, r_sum)) - window_width / 2 + int(warped.shape[1] / 2)
-
-    # Add what we found for the first layer
-    window_centroids.append((l_center, r_center))
-
-    # Go through each layer looking for max pixel locations
-    for level in range(1, (int)(warped.shape[0] / window_height)):
-        # convolve the window into the vertical slice of the image
-        image_layer = np.sum(
-            warped[int(warped.shape[0] - (level + 1) * window_height):int(warped.shape[0] - level * window_height), :],
-            axis=0)
-        conv_signal = np.convolve(window, image_layer)
-        # Find the best left centroid by using past left center as a reference
-        # Use window_width/2 as offset because convolution signal reference is at right side of window, not center of window
-        offset = window_width / 2
-        l_min_index = int(max(l_center + offset - margin, 0))
-        l_max_index = int(min(l_center + offset + margin, warped.shape[1]))
-        l_center = np.argmax(conv_signal[l_min_index:l_max_index]) + l_min_index - offset
-        # Find the best right centroid by using past right center as a reference
-        r_min_index = int(max(r_center + offset - margin, 0))
-        r_max_index = int(min(r_center + offset + margin, warped.shape[1]))
-        r_center = np.argmax(conv_signal[r_min_index:r_max_index]) + r_min_index - offset
-        # Add what we found for that layer
-        window_centroids.append((l_center, r_center))
-
-    return window_centroids
+        # s_binary = np.zeros_like(img)
+        # return s_binary[(yellow == 1) | (white_2 == 1) | (white_3 == 1)]
+        return yellow | white | white_2 | white_3
 
 def overlay_images(img1, img2):
     assert img1.shape == img2.shape
@@ -437,6 +429,7 @@ class LaneFinder:
         self._current_img = None
 
     def full_lane_finding_step(self, binary_img):
+        Utils.plot_binary(binary_img)
         height = binary_img.shape[0]
 
         # Find the histogram for the bottom half of the image. WHY ????
@@ -518,24 +511,39 @@ class LaneFinder:
         righty = nonzeroy[right_lane_idxs]
 
         # Fit a second order polynomial to each
-        left_fit = np.polyfit(lefty, leftx, 2)
-        right_fit = np.polyfit(righty, rightx, 2)
+        left_fit = None
+        if len(leftx) > 0 and len(lefty) >  0:
+            left_fit = np.polyfit(lefty, leftx, 2)
+
+        right_fit = None
+        if len(rightx) > 0 and len(righty) > 0:
+            right_fit = np.polyfit(righty, rightx, 2)
 
         # Generate x and y values for plotting
         ploty = np.linspace(0, height - 1, height)
-        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
-        right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+
+        left_fitx = None
+        if left_fit is not None:
+            left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+
+        right_fitx = None
+        if right_fit is not None:
+            right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
 
         out_img[nonzeroy[left_lane_idxs], nonzerox[left_lane_idxs]] = [255, 0, 0]
         out_img[nonzeroy[right_lane_idxs], nonzerox[right_lane_idxs]] = [0, 0, 255]
-        plt.plot(left_fitx, ploty, color='yellow')
-        plt.plot(right_fitx, ploty, color='yellow')
+
+        if left_fitx is not None:
+            plt.plot(left_fitx, ploty, color='yellow')
+
+        if right_fitx is not None:
+            plt.plot(right_fitx, ploty, color='yellow')
         plt.xlim(0, 1280)
         plt.ylim(720, 0)
 
         self._left_fit = left_fit
         self._right_fit = right_fit
-        self._current_img = binary_img
+        self._current_img = out_img
         self.visualize(binary_img, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx, margin, ploty)
         return left_fit, right_fit, binary_img
 
@@ -560,19 +568,28 @@ class LaneFinder:
         rightx = nonzerox[right_lane_idxs]
         righty = nonzeroy[right_lane_idxs]
         # Fit a second order polynomial to each
-        left_fit = np.polyfit(lefty, leftx, 2)
-        right_fit = np.polyfit(righty, rightx, 2)
-        # Generate x and y values for plotting
-        ploty = np.linspace(0, binary_img.shape[0] - 1, binary_img.shape[0])
-        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
-        right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+        left_fit = None
+        if len(leftx) > 0 & len(lefty) > 0:
+            left_fit = np.polyfit(lefty, leftx, 2)
 
-        self._left_fit = left_fitx
-        self._right_fit = right_fitx
+        right_fit = None
+        if len(rightx) > 0 and len(righty) > 0:
+            right_fit = np.polyfit(righty, rightx, 2)
+
+        self._left_fit = left_fit
+        self._right_fit = right_fit
         self._current_img = binary_img
 
-        self.visualize(binary_img, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx, margin, ploty)
-        return left_fitx, right_fitx, binary_img
+
+        if left_fit is not None and right_fit is not None:
+            # Generate x and y values for plotting
+            ploty = np.linspace(0, binary_img.shape[0] - 1, binary_img.shape[0])
+            left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+            right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+
+            self.visualize(binary_img, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx, margin, ploty)
+
+        return left_fit, right_fit, binary_img
 
     def visualize(self, binary_warped, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx,
                   margin, ploty):
@@ -585,16 +602,29 @@ class LaneFinder:
 
         # Generate a polygon to illustrate the search window area
         # And recast the x and y points into usable format for cv2.fillPoly()
-        left_line_window1 = np.array([np.transpose(np.vstack([left_fitx - margin, ploty]))])
-        left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx + margin, ploty])))])
+        left_line_window1 = []
+        left_line_window2 = []
+        if left_fitx is not None:
+            left_line_window1 = np.array([np.transpose(np.vstack([left_fitx - margin, ploty]))])
+            left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx + margin, ploty])))])
+
         left_line_pts = np.hstack((left_line_window1, left_line_window2))
-        right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - margin, ploty]))])
-        right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + margin, ploty])))])
+
+        right_line_window1 = []
+        right_line_window2 = []
+
+        if right_fitx is not None:
+            right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - margin, ploty]))])
+            right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + margin, ploty])))])
+
         right_line_pts = np.hstack((right_line_window1, right_line_window2))
 
         # Draw the lane onto the warped blank image
-        cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
-        cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
+        if len(left_line_pts) > 0:
+            cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
+
+        if len(right_line_pts) > 0:
+            cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
         result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
         # plt.imshow(result)
         # plt.plot(left_fitx, ploty, color='yellow')
@@ -605,28 +635,51 @@ class LaneFinder:
 
     def overlay_lane(self, image, left_fit, right_fit, transform):
         left_ys = np.linspace(0, 100, num=101) * 7.2
-        left_xs = left_fit[0] * left_ys ** 2 + left_fit[1] * left_ys + left_fit[2]
+
+        left_xs = None
+        if left_fit is not None:
+            left_xs = left_fit[0] * left_ys ** 2 + left_fit[1] * left_ys + left_fit[2]
 
         right_ys = np.linspace(0, 100, num=101) * 7.2
-        right_xs = right_fit[0] * right_ys ** 2 + right_fit[1] * right_ys + right_fit[2]
+
+        right_xs = None
+        if right_fit is not None:
+            right_xs = right_fit[0] * right_ys ** 2 + right_fit[1] * right_ys + right_fit[2]
 
         color_warp = np.zeros_like(image).astype(np.uint8)
 
-        pts_left = np.array([np.transpose(np.vstack([left_xs, left_ys]))])
-        pts_right = np.array([np.flipud(np.transpose(np.vstack([right_xs, right_ys])))])
-        pts = np.hstack((pts_left, pts_right))
+        pts_left, pts_right = [], []
 
-        cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
-        newwarp = transform.top_down_to_original(color_warp, image)
+        if left_xs is not None:
+            pts_left = np.array([np.transpose(np.vstack([left_xs, left_ys]))])
 
-        return cv2.addWeighted(image, 1, newwarp, 0.3, 0)
+        if right_xs is not None:
+            pts_right = np.array([np.flipud(np.transpose(np.vstack([right_xs, right_ys])))])
+
+        new_img = image
+        if len(pts_left) == len(pts_right) and len(pts_left) > 0:
+            pts = np.hstack((pts_left, pts_right))
+
+            cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
+            newwarp = transform.top_down_to_original(color_warp, image)
+
+            new_img = cv2.addWeighted(image, 1, newwarp, 0.3, 0)
+
+        return new_img
 
 lane_finder = LaneFinder()
 roi = RegionOfInterest()
 
-def pipeline(img):
-    global ARGS
+counter = 0
 
+left_fit = None
+right_fit = None
+
+def pipeline(img):
+    global ARGS, counter, left_fit, right_fit
+
+    filename = "failed/" + str(counter) + ".png"
+    cv2.imwrite(filename, img)
     cameracalib = CameraCalibration(chessboard_size=(9, 6), args=ARGS)
     # Undistort the image
     distorted = img
@@ -634,44 +687,71 @@ def pipeline(img):
     logger.info("Performing Distortion Correction on Image:")
     unwarped = cameracalib.unwarp(img, False)
 
-    saturation_channel_img = get_saturation_channel(unwarped)
-    binary = Thresholder.simple_threshold(saturation_channel_img, thresh=(90, 255))
-    # plt.imshow(binary, cmap='gray')
-    # plt.title("Saturation Image")
-    # plt.show()
+    # saturation_channel_img = get_saturation_channel(unwarped)
+    # binary = Thresholder.simple_threshold(saturation_channel_img, thresh=(90, 255))
+    # if DEBUG:
+    #     plt.imshow(binary, cmap='gray')
+    #     plt.title("Saturation Image")
+    #     plt.show()
+    #
+    # # Perform the Thresholding on the image
+    # thresholded = Thresholder.combined_filters(unwarped, True, (10, 100), (200, 255), (0.0, 0.6))
+    #
+    # if DEBUG:
+    #     plt.imshow(thresholded, cmap='gray')
+    #     plt.title("Thresholded Image")
+    #     plt.show()
 
-    # Perform the Thresholding on the image
-    thresholded = Thresholder.combined_filters(unwarped, True, (50, 200), (50, 235), (-0.5, 1.1))
+    # overlay_img = overlay_images(binary, thresholded)
+    overlay_img = Thresholder.color_threshold(unwarped)
 
-    # plt.imshow(thresholded, cmap='gray')
-    # plt.title("Thresholded Image")
-    # plt.show()
-
-    overlay_img = overlay_images(binary, thresholded)
-    # plt.imshow(overlay_img, cmap='gray')
-    # plt.title("Overlay Image")
-    # plt.show()
+    if DEBUG:
+        plt.imshow(overlay_img, cmap='gray')
+        plt.title("Overlay Image")
+        plt.show()
 
     if DEBUG:
         src_transformation_img, dst_transformation_img = RegionOfInterest.polygon_overlay_img(img)
         Utils.display_images([src_transformation_img, dst_transformation_img], rows=1, cols=2, is_grayscale=False, title="test")
 
     perspective_transformed_img = roi.warp_perspective_to_top_down(overlay_img)
+    if DEBUG:
+        plt.title("Perspective Transformed Image")
+        Utils.plot_binary(perspective_transformed_img)
+
     mpimg.imsave('binary.png', perspective_transformed_img)
 
     # plt.imshow(perspective_transformed_img, cmap='gray')
     # plt.title("Perspective Transformed Image")
     # plt.show()
 
-    left_fit, right_fit, binary_img = lane_finder.full_lane_finding_step(perspective_transformed_img)
+    if left_fit is None or right_fit is None:
+        left_fit, right_fit, binary_img = lane_finder.full_lane_finding_step(perspective_transformed_img)
+    else:
+        left_fit, right_fit, binary_img = lane_finder.partial_lane_finding_step(perspective_transformed_img, left_fit, right_fit)
+    if DEBUG:
+        plt.title("Lane Overlaid")
+        Utils.plot_binary(binary_img)
+
 
     final_img = lane_finder.overlay_lane(unwarped, left_fit, right_fit, roi)
+    if DEBUG:
+        plt.title("Final Image")
+        plt.imshow(final_img)
+        plt.axis('off')
+        plt.show()
 
-    plt.imshow(final_img)
-    plt.show()
+
+    frame = "Frame: %s" % counter
+    final_img = Utils.overlay_text(final_img, frame, pos=(10, 10))
+
+    # plt.imshow(final_img)
+    # plt.show()
 
     # all =  Utils.merge_images(unwarped, thresholded, perspective_transformed_img)
-    return overlay_img
+    # os.remove(filename)
+    counter += 1
+    return final_img
 
 def test_images_pipeline():
     test_files = os.listdir("test_images")
