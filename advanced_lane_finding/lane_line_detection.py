@@ -78,8 +78,6 @@ logging.setLoggerClass(ColoredLogger)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 
-DEBUG = True
-
 class Utils:
     @staticmethod
     def plot_binary(binary_img):
@@ -142,9 +140,6 @@ class Utils:
         if not per_plot_title:
             plt.title(title)
 
-        if DEBUG:
-            plt.show()
-
         canvas.draw()
         w, h = fig.canvas.get_width_height()
         image = np.fromstring(canvas.tostring_rgb(), dtype='uint8')
@@ -192,7 +187,7 @@ class CameraCalibration:
                     imgpoints.append(corners)
                     objpoints.append(objp)
 
-                    if DEBUG:
+                    if args.debug:
                         chessboard_corners_img = cv2.drawChessboardCorners(calib_img, chessboard_size, corners, ret)
                         plt.imshow(chessboard_corners_img)
                         plt.show()
@@ -282,10 +277,6 @@ class RegionOfInterest:
         transformation_matrix = cv2.getPerspectiveTransform(src, dst)  # the transform matrix
         transformation_matrix_inverse = cv2.getPerspectiveTransform(dst, src)  # the transform matrix inverse
         perspective_top_down = cv2.warpPerspective(img, transformation_matrix, (img_size))  # warp image to a top-down view
-        if DEBUG:
-            plt.title("Perspective Top Down")
-            plt.imshow(perspective_top_down)
-            plt.show()
 
         self.transformation_matrix = transformation_matrix
         self.inverse_matrix = transformation_matrix_inverse
@@ -296,6 +287,7 @@ class RegionOfInterest:
 
     @staticmethod
     def polygon_overlay_img(img):
+        global ARGS
         """
         Create green polygon and overlay on undistorted image.
         """
@@ -313,7 +305,7 @@ class RegionOfInterest:
         dst_transformation_img = cv2.line(dst_transformation_img, tuple(dst[2]), tuple(dst[3]), [0, 255, 0], 3)
         dst_transformation_img = cv2.line(dst_transformation_img, tuple(dst[3]), tuple(dst[0]), [0, 255, 0], 3)
 
-        if DEBUG:
+        if False:
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(25, 10))
             ax1.axis('off')
             ax2.axis('off')
@@ -408,7 +400,7 @@ class Thresholder:
 
         # s_binary = np.zeros_like(img)
         # return s_binary[(yellow == 1) | (white_2 == 1) | (white_3 == 1)]
-        return yellow | white | white_2 | white_3
+        return (yellow | white | white_2 | white_3) // 255
 
 def overlay_images(img1, img2):
     assert img1.shape == img2.shape
@@ -422,11 +414,78 @@ def get_saturation_channel(img):
     s = hls[:, :, 2]
     return s
 
+# Values from Udacity
+X_METER_PER_PIXEL = 3.7/700
+Y_METER_PER_PIXEL = 30/720
+
+class Lane:
+    def __init__(self, xs, ys, height_to_generate):
+        self._xs_pixels = xs
+        self._ys_pixels = ys
+        # Height is not required but just because its easy am storing it.
+        self._height = height_to_generate
+
+        self._xs = xs * X_METER_PER_PIXEL
+        self._ys = ys * Y_METER_PER_PIXEL
+
+    def fit(self):
+        # Fit a 2nd order polynomial
+        if self._xs is not None and self._ys is not None and len(self._xs) > 0 and len(self._ys) > 0:
+            return np.polyfit(self._xs, self._ys, 2)
+
+        return None
+
+    def pixels_fit(self):
+        if self._xs_pixels is not None and self._ys_pixels is not None and len(self._xs_pixels) > 0 and len(self._ys_pixels) > 0:
+            return np.polyfit(self._xs_pixels, self._ys_pixels, 2)
+
+        return None
+
+    def p(self):
+        return np.poly1d(self.fit())
+
+    def p1(self):
+        # First Derivative
+        return np.polyder(self.p())
+
+    def p2(self):
+        # 2nd Derivative
+        return np.polyder(self.p(), 2)
+
+    def _curvature(self, y):
+        scaled_y = y * Y_METER_PER_PIXEL
+        pixels_fit = self.pixels_fit()
+        if pixels_fit is None:
+            return None
+
+        A = pixels_fit[0]
+        B = pixels_fit[1]
+        c = ((1 + (2 * A * scaled_y + B) ** 2) ** 1.5) / np.absolute(2 * A)
+        return c
+
+    def curvature(self):
+        return self._curvature(self._height)
+
+    def get_lane_fit(self):
+        try:
+            ploty = np.linspace(0, self._height - 1, self._height)
+            pixel_fit = self.pixels_fit()
+            line_fit = pixel_fit[0] * ploty ** 2 + self.pixels_fit()[1] * ploty + pixel_fit[2]
+        except:
+            raise Exception("Failed during lane fitting")
+
+        return line_fit, ploty
+
 class LaneFinder:
     def __init__(self):
-        self._left_fit = None
-        self._right_fit = None
-        self._current_img = None
+        self.current_left_lane = None
+        self.current_right_lane = None
+        self.left_fit = None
+        self.right_fit = None
+        self._right_lanex = None
+        self._right_laney = None
+        self._left_laney = None
+        self._right_lanex = None
 
     def full_lane_finding_step(self, binary_img):
         Utils.plot_binary(binary_img)
@@ -510,6 +569,9 @@ class LaneFinder:
         rightx = nonzerox[right_lane_idxs]
         righty = nonzeroy[right_lane_idxs]
 
+        # self.current_left_lane = Lane(leftx, lefty, height)
+        # self.current_right_lane = Lane(rightx, righty, height)
+
         # Fit a second order polynomial to each
         left_fit = None
         if len(leftx) > 0 and len(lefty) >  0:
@@ -538,19 +600,21 @@ class LaneFinder:
 
         if right_fitx is not None:
             plt.plot(right_fitx, ploty, color='yellow')
-        plt.xlim(0, 1280)
-        plt.ylim(720, 0)
 
         self._left_fit = left_fit
         self._right_fit = right_fit
-        self._current_img = out_img
-        self.visualize(binary_img, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx, margin, ploty)
-        return left_fit, right_fit, binary_img
+        self._left_lanex = left_fitx
+        self._left_laney = ploty
+        self._right_lanex = right_fitx
+        self._right_laney = ploty
 
-    def partial_lane_finding_step(self, binary_img, left_fit, right_fit):
+    def partial_lane_finding_step(self, binary_img, last_frame_left_lane : Lane, last_frame_right_lane : Lane):
         nonzero = binary_img.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
+
+        left_fit = last_frame_left_lane.pixels_fit()
+        right_fit = last_frame_right_lane.pixels_fit()
 
         margin = 100
 
@@ -567,9 +631,14 @@ class LaneFinder:
         lefty = nonzeroy[left_lane_idxs]
         rightx = nonzerox[right_lane_idxs]
         righty = nonzeroy[right_lane_idxs]
+
+        height = binary_img.shape[0]
+        # self.current_left_lane = Lane(leftx, lefty, height)
+        # self.current_right_lane = Lane(rightx, righty, height)
+
         # Fit a second order polynomial to each
         left_fit = None
-        if len(leftx) > 0 & len(lefty) > 0:
+        if len(leftx) > 0 and len(lefty) > 0:
             left_fit = np.polyfit(lefty, leftx, 2)
 
         right_fit = None
@@ -587,54 +656,67 @@ class LaneFinder:
             left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
             right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
 
-            self.visualize(binary_img, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx, margin, ploty)
+            self._left_lanex = left_fitx
+            self._right_lanex = right_fitx
 
-        return left_fit, right_fit, binary_img
+        #     self.visualize(binary_img, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx, margin, ploty)
 
-    def visualize(self, binary_warped, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx,
-                  margin, ploty):
-        # Create an image to draw on and an image to show the selection window
-        out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
-        window_img = np.zeros_like(out_img)
-        # Color in left and right line pixels
-        out_img[nonzeroy[left_lane_idxs], nonzerox[left_lane_idxs]] = [255, 0, 0]
-        out_img[nonzeroy[right_lane_idxs], nonzerox[right_lane_idxs]] = [0, 0, 255]
 
-        # Generate a polygon to illustrate the search window area
-        # And recast the x and y points into usable format for cv2.fillPoly()
-        left_line_window1 = []
-        left_line_window2 = []
-        if left_fitx is not None:
-            left_line_window1 = np.array([np.transpose(np.vstack([left_fitx - margin, ploty]))])
-            left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx + margin, ploty])))])
+    # def visualize_on_perspective_img(self, binary_warped, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx,
+    #               margin, ploty):
+    #     # Create an image to draw on and an image to show the selection window
+    #     out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
+    #     window_img = np.zeros_like(out_img)
+    #     # Color in left and right line pixels
+    #     out_img[nonzeroy[left_lane_idxs], nonzerox[left_lane_idxs]] = [255, 0, 0]
+    #     out_img[nonzeroy[right_lane_idxs], nonzerox[right_lane_idxs]] = [0, 0, 255]
+    #
+    #     # Generate a polygon to illustrate the search window area
+    #     # And recast the x and y points into usable format for cv2.fillPoly()
+    #     left_line_window1 = []
+    #     left_line_window2 = []
+    #     if left_fitx is not None:
+    #         left_line_window1 = np.array([np.transpose(np.vstack([left_fitx - margin, ploty]))])
+    #         left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx + margin, ploty])))])
+    #
+    #     left_line_pts = np.hstack((left_line_window1, left_line_window2))
+    #
+    #     right_line_window1 = []
+    #     right_line_window2 = []
+    #
+    #     if right_fitx is not None:
+    #         right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - margin, ploty]))])
+    #         right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + margin, ploty])))])
+    #
+    #     right_line_pts = np.hstack((right_line_window1, right_line_window2))
+    #
+    #     # Draw the lane onto the warped blank image
+    #     if len(left_line_pts) > 0:
+    #         cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
+    #
+    #     if len(right_line_pts) > 0:
+    #         cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
+    #     result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
 
-        left_line_pts = np.hstack((left_line_window1, left_line_window2))
+    def distance_from_center(self, left, right, center):
+        TO_METER = np.array([[X_METER_PER_PIXEL, 0],
+                             [0, Y_METER_PER_PIXEL]])
 
-        right_line_window1 = []
-        right_line_window2 = []
+        center_dot = np.dot(center, TO_METER)
 
-        if right_fitx is not None:
-            right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - margin, ploty]))])
-            right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + margin, ploty])))])
+        if right.p() is not None or left.p() is not None:
+            return 0
 
-        right_line_pts = np.hstack((right_line_window1, right_line_window2))
+        right_x = right.p() * (center_dot[1])
+        left_x = left.p() * (center_dot[1])
 
-        # Draw the lane onto the warped blank image
-        if len(left_line_pts) > 0:
-            cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
+        return ((right_x + left_x) / 2 - center_dot[0])
 
-        if len(right_line_pts) > 0:
-            cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
-        result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
-        # plt.imshow(result)
-        # plt.plot(left_fitx, ploty, color='yellow')
-        # plt.plot(right_fitx, ploty, color='yellow')
-        # plt.xlim(0, 1280)
-        # plt.ylim(720, 0)
-        # plt.show()
-
-    def overlay_lane(self, image, left_fit, right_fit, transform):
+    def overlay_lane(self, image, left_lane, right_lane, transform):
         left_ys = np.linspace(0, 100, num=101) * 7.2
+
+        left_fit = left_lane
+        right_fit = right_lane
 
         left_xs = None
         if left_fit is not None:
@@ -661,23 +743,59 @@ class LaneFinder:
             pts = np.hstack((pts_left, pts_right))
 
             cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
-            newwarp = transform.top_down_to_original(color_warp, image)
+            newwarp = cv2.warpPerspective(color_warp, transform, image.shape[1::-1])
 
             new_img = cv2.addWeighted(image, 1, newwarp, 0.3, 0)
 
         return new_img
+
+    def compute_curvature(self, fit, height):
+        scaled_height = height * Y_METER_PER_PIXEL
+        A = fit[0]
+        B = fit[1]
+        c = ((1 + (2 * A * scaled_height + B) ** 2) ** 1.5) / np.absolute(2 * A)
+        return c
+
+
+    def overlay(self, img, roi : RegionOfInterest):
+        shape = img.shape
+        # left_curvature = left_lane.curvature()
+        # right_curvature = right_lane.curvature()
+
+        if self._left_fit is None:
+            left_curvature = 0.0
+        else:
+            left_curvature = self.compute_curvature(self._left_fit, shape[0])
+
+        if self._right_fit is None:
+            right_curvature = 0.0
+        else:
+            right_curvature = self.compute_curvature(self._right_fit, shape[0])
+
+        # center_point = (shape[1] / 2, shape[0])
+        # center_distance = self.distance_from_center(left_lane, right_lane, center_point)
+
+        img = self.overlay_lane(img, self._left_fit, self._right_fit, roi.inverse_matrix)
+
+        left_overlay = "Left curvature: {0:.2f}m".format(left_curvature)
+        img = Utils.overlay_text(img, left_overlay, pos=(10, 10))
+
+        right_overlay = "Right curvature: {0:.2f}m".format(right_curvature)
+        img = Utils.overlay_text(img, right_overlay, pos=(10, 90))
+
+        # center_overlay = "Distance from center: {0:.2f}m".format(center_distance)
+        # img = Utils.overlay_text(img, center_overlay, pos=(10, 180))
+
+        return img
+
 
 lane_finder = LaneFinder()
 roi = RegionOfInterest()
 
 counter = 0
 
-left_fit = None
-right_fit = None
-
 def pipeline(img):
-    global ARGS, counter, left_fit, right_fit
-
+    global ARGS, counter
     filename = "failed/" + str(counter) + ".png"
     cv2.imwrite(filename, img)
     cameracalib = CameraCalibration(chessboard_size=(9, 6), args=ARGS)
@@ -687,12 +805,12 @@ def pipeline(img):
     logger.info("Performing Distortion Correction on Image:")
     unwarped = cameracalib.unwarp(img, False)
 
-    # saturation_channel_img = get_saturation_channel(unwarped)
-    # binary = Thresholder.simple_threshold(saturation_channel_img, thresh=(90, 255))
-    # if DEBUG:
-    #     plt.imshow(binary, cmap='gray')
-    #     plt.title("Saturation Image")
-    #     plt.show()
+    saturation_channel_img = get_saturation_channel(unwarped)
+    binary = Thresholder.simple_threshold(saturation_channel_img, thresh=(90, 255))
+    if ARGS.debug:
+        plt.imshow(binary, cmap='gray')
+        plt.title("Saturation Image")
+        plt.show()
     #
     # # Perform the Thresholding on the image
     # thresholded = Thresholder.combined_filters(unwarped, True, (10, 100), (200, 255), (0.0, 0.6))
@@ -704,18 +822,24 @@ def pipeline(img):
 
     # overlay_img = overlay_images(binary, thresholded)
     overlay_img = Thresholder.color_threshold(unwarped)
-
-    if DEBUG:
+    if ARGS.debug:
         plt.imshow(overlay_img, cmap='gray')
         plt.title("Overlay Image")
         plt.show()
 
-    if DEBUG:
+    overlay_img = overlay_images(binary, overlay_img)
+
+    if ARGS.debug:
+        plt.imshow(overlay_img, cmap='gray')
+        plt.title("Overlay Image")
+        plt.show()
+
+    if ARGS.debug:
         src_transformation_img, dst_transformation_img = RegionOfInterest.polygon_overlay_img(img)
         Utils.display_images([src_transformation_img, dst_transformation_img], rows=1, cols=2, is_grayscale=False, title="test")
 
     perspective_transformed_img = roi.warp_perspective_to_top_down(overlay_img)
-    if DEBUG:
+    if ARGS.debug:
         plt.title("Perspective Transformed Image")
         Utils.plot_binary(perspective_transformed_img)
 
@@ -725,25 +849,24 @@ def pipeline(img):
     # plt.title("Perspective Transformed Image")
     # plt.show()
 
-    if left_fit is None or right_fit is None:
-        left_fit, right_fit, binary_img = lane_finder.full_lane_finding_step(perspective_transformed_img)
+    if lane_finder.current_left_lane is None or lane_finder.current_right_lane is None:
+        lane_finder.full_lane_finding_step(perspective_transformed_img)
     else:
-        left_fit, right_fit, binary_img = lane_finder.partial_lane_finding_step(perspective_transformed_img, left_fit, right_fit)
-    if DEBUG:
-        plt.title("Lane Overlaid")
-        Utils.plot_binary(binary_img)
+        lane_finder.partial_lane_finding_step(perspective_transformed_img, lane_finder.left_fit, lane_finder.right_fit)
 
+    # if DEBUG:
+    #     plt.title("Lane Overlaid")
+    #     Utils.plot_binary(binary_img)
 
-    final_img = lane_finder.overlay_lane(unwarped, left_fit, right_fit, roi)
-    if DEBUG:
+    final_img = lane_finder.overlay(unwarped, roi)
+    if ARGS.debug:
         plt.title("Final Image")
         plt.imshow(final_img)
         plt.axis('off')
         plt.show()
 
-
-    frame = "Frame: %s" % counter
-    final_img = Utils.overlay_text(final_img, frame, pos=(10, 10))
+    # frame = "Frame: %s" % counter
+    # final_img = Utils.overlay_text(final_img, frame, pos=(10, 10))
 
     # plt.imshow(final_img)
     # plt.show()
@@ -751,6 +874,7 @@ def pipeline(img):
     # all =  Utils.merge_images(unwarped, thresholded, perspective_transformed_img)
     # os.remove(filename)
     counter += 1
+    # return final_img
     return final_img
 
 def test_images_pipeline():
@@ -769,6 +893,7 @@ def argument_parser():
     parser.add_argument("--pipeline", help="The pipeline to use.", type=str, choices=["test", "image", "video"], default="test")
     parser.add_argument("--experiment", help="The experiment name to try", type=str)
     parser.add_argument("--file", help="Video / Image file to use", type=str)
+    parser.add_argument("--debug", help="Debug experiment", action="store_true")
 
     args = parser.parse_args()
     return args
@@ -790,7 +915,7 @@ def main():
         # plt.imshow(result)
         # plt.show()
     elif args.pipeline == "video":
-        clip = VideoFileClip(args.file)
+        clip = VideoFileClip(args.file).subclip(0, -45)
         output_clip = clip.fl_image(pipeline)
         output_clip.write_videofile('output.mp4', audio=False)
 
