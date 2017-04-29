@@ -19,6 +19,8 @@ from PIL import ImageFont
 from moviepy.editor import VideoFileClip
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
+from pyexperimenthistory.pyexperimenthistory.experiment import ExperimentManager, Experiment
+
 matplotlib.style.use('ggplot')
 
 ARGS = None
@@ -90,7 +92,7 @@ class Utils:
         return cv2.imread(filename)
 
     @staticmethod
-    def display_images(imgs, is_grayscale, rows, cols, title, fig_size=(5, 5)):
+    def matplotlib_row_col_display_imgs(imgs, is_grayscale, rows, cols, title, fig_size=(5, 5)):
         if len(imgs) != rows * cols:
             raise Exception("Invalid shape specified. Expected rows * cols = len(imgs)")
 
@@ -799,11 +801,22 @@ def pipeline(img):
     filename = "failed/" + str(counter) + ".png"
     cv2.imwrite(filename, img)
     cameracalib = CameraCalibration(chessboard_size=(9, 6), args=ARGS)
+
     # Undistort the image
     distorted = img
 
+    # Try out a chess board to make sure that the calibration works
+    chess_board_distorted = Utils.read_image('camera_cal/calibration1.jpg')
+    unwarped_chess_board = cameracalib.unwarp(chess_board_distorted, display_img=False)
+    Utils.matplotlib_row_col_display_imgs([chess_board_distorted, unwarped_chess_board],
+                                          is_grayscale=False,
+                                          rows = 1, cols = 2,
+                                          title=["Distorted Chess Board", "Undistorted Chess Board"],
+                                          fig_size=(10, 5))
+    plt.show()
+
     logger.info("Performing Distortion Correction on Image:")
-    unwarped = cameracalib.unwarp(img, False)
+    unwarped = cameracalib.unwarp(distorted, display_img=False)
 
     saturation_channel_img = get_saturation_channel(unwarped)
     binary = Thresholder.simple_threshold(saturation_channel_img, thresh=(90, 255))
@@ -836,7 +849,7 @@ def pipeline(img):
 
     if ARGS.debug:
         src_transformation_img, dst_transformation_img = RegionOfInterest.polygon_overlay_img(img)
-        Utils.display_images([src_transformation_img, dst_transformation_img], rows=1, cols=2, is_grayscale=False, title="test")
+        Utils.matplotlib_row_col_display_imgs([src_transformation_img, dst_transformation_img], rows=1, cols=2, is_grayscale=False, title="test")
 
     perspective_transformed_img = roi.warp_perspective_to_top_down(overlay_img)
     if ARGS.debug:
