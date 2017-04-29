@@ -19,7 +19,7 @@ from PIL import ImageFont
 from moviepy.editor import VideoFileClip
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
-from pyexperimenthistory.pyexperimenthistory.experiment import ExperimentManager, Experiment
+from pyexperimenthistory.pyexperimenthistory.experiment import ExperimentManager, Experiment, ExperimentManagerOptions
 
 matplotlib.style.use('ggplot')
 
@@ -797,6 +797,14 @@ roi = RegionOfInterest()
 counter = 0
 
 def pipeline(img):
+    # Create an experiment Manager
+    exp_mgr_options = ExperimentManagerOptions()
+    exp_mgr_options.overwrite_if_experiment_exists = True
+    exp_mgr = ExperimentManager(exp_mgr_options)
+
+    if ARGS.experiment != "":
+        ARGS.experiment = exp_mgr.get_experiment(ARGS.experiment)
+
     global ARGS, counter
     filename = "failed/" + str(counter) + ".png"
     cv2.imwrite(filename, img)
@@ -813,7 +821,7 @@ def pipeline(img):
                                           rows = 1, cols = 2,
                                           title=["Distorted Chess Board", "Undistorted Chess Board"],
                                           fig_size=(10, 5))
-    plt.show()
+
 
     logger.info("Performing Distortion Correction on Image:")
     unwarped = cameracalib.unwarp(distorted, display_img=False)
