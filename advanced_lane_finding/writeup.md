@@ -17,6 +17,8 @@
 [equation]: ./output_images/equation.png "Equation of Curvature"
 [polynomial]: ./output_images/polynomial.png "Polynomial"
 [derivatives]: ./output_images/derivatives.png "Derivatives"
+[challenge_frame]: ./output_images/challenge_frame.png "Challenge Frame"
+[harder_challenge_frame]: ./output_images/harder_challenge_frame.png "Harder Challenge Frame"
 
 [video1]: ./project_video.mp4 "Video"
 
@@ -55,10 +57,15 @@ The steps shown here represent the overall algorithm which is used to find out t
 ### Undistortion
 The undistortion is performed by multiplying the transformation matrix we obtained from the camera calibration. The image below shows the result from the un-distortion from the camera calibration matrix.
 
+The class CameraCalibration has methods which store the calibration file once its calibrated and also has the methods to load and calibrate the camera.
+
 ![alt text][undistorted_img]
 
 ### Saturation Thresholding
 Yellow color lanes are best extracted by doing thresholding on the saturation images. So once we have the un-distorted images we convert it to HLS image. I use a thresholding values of (90, 255) to extract the yellow lines from the image. The image below shows both the saturation channel and the yellow line extracted.
+
+The Thresholder class is responsible for having all the methods for thresholding.
+Thresholder::simple_threshold is used for doing threshold on the saturation channel.
 
 ![alt text][saturation_thresholding]
 
@@ -75,6 +82,8 @@ white_3 = cv2.inRange(img, (200, 200, 200), (255, 255, 255))
 ```
 
 The color threshold is then combined with the saturation thresholded image to generate a merged image which extracts the best of both worlds.
+
+This code is present in the Thresholder::color_threshold method.
 ![alt text][color_merged_thresholding]
 
 ### Region of Interest
@@ -82,6 +91,8 @@ During this step we define a region of interest. This is essentially the region 
 ![alt text][roi]
 
 With these regions defined we create a perspective transform and we get a transformation matrix and an inverse transformation matrix. The inverse transformation matrix is used at the last step to transform the perspective image back to the original image.
+
+The code for this part is present in RegionOfInterest::warp_perspective_to_top_down
 
 ### Lane Finding Algorithm
 The image below shows the perspective image. This image shows the bird's eye view of the road.
@@ -97,15 +108,22 @@ Once this entire process completes, the algorithm figures out the major chunk of
 
 After computing the lanes, we draw them back on the original undistorted image as follows.
 
+#### Fine tuning:
+* Tried constraining the polyline fit to the center of the box searches but that didn't work out well.
+* Frame averaging - Took about 10 previous frames data to average and get a smooth polyline. This seemed to work decently well for the challenge video.
+
+This part of the algorithm is present in LaneFinder::full_lane_finding_step
 #### Short circuiting the lane finding algorithm
 
 Once a full lane finding step is performed for the next frames the search is started around the lanes identified from the previous frame. However, if at any point either the left lane or right lane are not found by this approach a full search is performed.
-
+The partial lane finding code is present in LaneFinder::partial_lane_finding_step
 ![alt text][lane_finder_algo]
 
 ### Inverse Transform & Final Result
 ![alt text][final_img]
 Once the lanes line region is drawn on the perspective image, the inverse transformation matrix which was obtained when we went from the original image's region of interest to the bird's eye view. This gives the final lane finding image.
+
+The final image overlay and visualization code is also contained in the LaneFinder class in the LaneFinder::overlay methods.
 
 ### Computing the curvature
 
@@ -116,6 +134,7 @@ Since we use a 2nd degree polynomial to fit the lines. The reason for using a 2n
 The above equation is used to compute the curvature.
 ![alt text][derivatives]
 The derivative values are the ones shown here and which is obtained from numpy.
+LaneFinder::compute_curvature
 
 ### Distance from center
 
@@ -125,3 +144,14 @@ where
 * A - Dot product of the center point (height / 2, width) and TO_METER which is the transformation from pixel space to Meters.
 * B - First order of derivative of left lane.
 * C - First order of derivative of right lane.
+LaneFinder::distance_from_center
+
+# Problems with Algorithm
+
+## Challenge Video:
+The biggest problem with the challenge video was the shadows under the bridge where the thresholding seems to detect either way too many regions or not detect the yellow lane lines properly.
+![alt text][challenge_frame]
+
+## Harder Challenge Video:
+The harder challenge has a greater problem with the core algorithm itself. The problem is that the lane curves very highly. The problem why this becomes problematic is because the right lane curves into the region of the left lane and hence the right lane is mistakenly recognized as a part of the left lane.
+![alt text][harder_challenge_frame]

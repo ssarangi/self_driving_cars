@@ -163,6 +163,13 @@ class Utils:
         return new_im
 
     @staticmethod
+    def merge_2x2(img1, img2, img3, img4):
+        new_img1 = np.concatenate([img1, img2], axis=1)
+        new_img2 = np.concatenate([img3, img4], axis=1)
+        combined = np.concatenate([new_img1, new_img2], axis=0)
+        return combined
+
+    @staticmethod
     def overlay_text(image, text, pos=(0, 0), color=(255, 255, 255)):
         image = Image.fromarray(image)
         draw = ImageDraw.Draw(image)
@@ -507,16 +514,25 @@ class Lane:
 
         return line_fit, ploty
 
+class Frame:
+    def __init__(self, leftx, lefty, rightx, righty):
+        self.leftx = leftx
+        self.lefty = lefty
+        self.rightx = rightx
+        self.righty = righty
+
 class LaneFinder:
-    def __init__(self):
-        self.current_left_lane = None
-        self.current_right_lane = None
+    def __init__(self, num_frames):
+        self._left_fit = None
+        self._right_fit = None
         self._right_lanex = None
         self._right_laney = None
         self._left_laney = None
         self._left_lanex = None
         # Set the width of the windows +/- margin
         self._margin = 100
+        self.num_frame_avg = num_frames
+        self.previous_frames = []
 
     @property
     def left_fit(self):
@@ -530,8 +546,6 @@ class LaneFinder:
         Utils.plot_binary(binary_img)
         height = binary_img.shape[0]
 
-        # Find the histogram for the bottom half of the image. WHY ????
-        # TODO: ssarangi - why do we need bottom half of image
         histogram = np.sum(binary_img[binary_img.shape[0]//2:, :], axis=0)
 
         # Create the output image to draw on
@@ -566,6 +580,11 @@ class LaneFinder:
 
         # Step through the windows
         i = 0
+        centers_left_x = []
+        centers_left_y = []
+        centers_right_x = []
+        centers_right_y = []
+
         for window in range(nwindows):
             # Identify window boundaries in x & y ( and right and left )
             win_y_low = height - (window + 1) * window_height
@@ -595,6 +614,22 @@ class LaneFinder:
             if len(good_right_idxs) > minpix:
                 rightx_current = np.int(np.mean(nonzerox[good_right_idxs]))
 
+            # Constrain the polyline fits to the center of the boxes. If they are not correct then we are in the
+            # wrong region looking for them
+            center_left_x = (win_xleft_low + win_xleft_high) // 2
+            center_right_x = (win_xright_low + win_xright_high) // 2
+            center_y = (win_y_low + win_y_high) // 2
+
+            centers_left_x.append(center_left_x)
+            centers_left_y.append(center_y)
+            centers_right_x.append(center_right_x)
+            centers_right_y.append(center_y)
+
+        centers_left_x = np.array(centers_left_x)
+        centers_left_y = np.array(centers_left_y)
+        centers_right_x = np.array(centers_right_x)
+        centers_right_y = np.array(centers_right_y)
+
         # Concatenate the array of indices
         left_lane_idxs = np.concatenate(left_lane_idxs)
         right_lane_idxs = np.concatenate(right_lane_idxs)
@@ -605,8 +640,24 @@ class LaneFinder:
         rightx = nonzerox[right_lane_idxs]
         righty = nonzeroy[right_lane_idxs]
 
+        leftx = np.concatenate((leftx, centers_left_x[-1:-2]))
+        lefty = np.concatenate((lefty, centers_left_y[-1:-2]))
+        rightx = np.concatenate((rightx, centers_right_x[-1:-2]))
+        righty = np.concatenate((righty, centers_right_y[-1:-2]))
+
+        if len(self.previous_frames) > self.num_frame_avg:
+            self.previous_frames.pop()
+
         # self.current_left_lane = Lane(leftx, lefty, height)
         # self.current_right_lane = Lane(rightx, righty, height)
+        frame = Frame(leftx, lefty, rightx, righty)
+
+        # Now left average the frames
+        for frame in self.previous_frames:
+            leftx = np.concatenate((leftx, frame.leftx))
+            lefty = np.concatenate((lefty, frame.lefty))
+            rightx = np.concatenate((rightx, frame.rightx))
+            righty = np.concatenate((righty, frame.righty))
 
         # Fit a second order polynomial to each
         left_fit = None
@@ -616,6 +667,9 @@ class LaneFinder:
         right_fit = None
         if len(rightx) > 0 and len(righty) > 0:
             right_fit = np.polyfit(righty, rightx, 2)
+
+        # Insert the current frame
+        self.previous_frames.insert(0, frame)
 
         # Generate x and y values for plotting
         ploty = np.linspace(0, height - 1, height)
@@ -670,10 +724,6 @@ class LaneFinder:
         rightx = nonzerox[right_lane_idxs]
         righty = nonzeroy[right_lane_idxs]
 
-        height = binary_img.shape[0]
-        # self.current_left_lane = Lane(leftx, lefty, height)
-        # self.current_right_lane = Lane(rightx, righty, height)
-
         # Fit a second order polynomial to each
         left_fit = None
         if len(leftx) > 0 and len(lefty) > 0:
@@ -696,6 +746,23 @@ class LaneFinder:
 
             self._left_lanex = left_fitx
             self._right_lanex = right_fitx
+
+    def visualize_lane_fits(self, inp_img):
+        # Generate x and y values for plotting
+        out_img = np.copy(inp_img)
+
+        ploty = np.linspace(0, inp_img.shape[0] - 1, inp_img.shape[0])
+        if self._left_fit is not None:
+            left_fitx = self.left_fit[0] * ploty ** 2 + self.left_fit[1] * ploty + self.left_fit[2]
+            pts1 = (np.dstack([left_fitx, ploty]))[0].astype(np.int32)
+            cv2.polylines(out_img, [pts1], False, (255, 255, 0), 3)
+
+        if self._right_fit is not None:
+            right_fitx = self.right_fit[0] * ploty ** 2 + self.right_fit[1] * ploty + self.right_fit[2]
+            pts2 = (np.dstack([right_fitx, ploty]))[0].astype(np.int32)
+            cv2.polylines(out_img, [pts2], False, (255, 255, 0), 3)
+
+        return out_img
 
     def overlay_lane(self, image, left_lane, right_lane, transform):
         left_ys = np.linspace(0, 100, num=101) * 7.2
@@ -735,6 +802,9 @@ class LaneFinder:
         return new_img
 
     def compute_curvature(self, lanex, height):
+        if self._left_fit is None or self._right_fit is None:
+            return 0.0
+
         scaled_height = height * Y_METER_PER_PIXEL
         ploty = np.linspace(0, height - 1, num=height)# to cover same y-range as image
 
@@ -750,6 +820,9 @@ class LaneFinder:
                              [0, Y_METER_PER_PIXEL]])
 
         center_dot = np.dot(center, TO_METER)
+
+        if self._left_fit is None or self._right_fit is None:
+            return 0.0
 
         left_x = np.poly1d(np.polyfit(self._left_laney * Y_METER_PER_PIXEL, self._left_lanex * X_METER_PER_PIXEL, 2))(center_dot[1])
         right_x  = np.poly1d(np.polyfit(self._right_laney * Y_METER_PER_PIXEL, self._right_laney * X_METER_PER_PIXEL, 2))(center_dot[1])
@@ -788,13 +861,14 @@ class LaneFinder:
         return img
 
 
-lane_finder = LaneFinder()
+lane_finder = LaneFinder(num_frames=5)
 roi = RegionOfInterest()
 
 counter = 0
 
 def pipeline(img):
     global ARGS, counter
+    lane_finder.num_frame_avg = ARGS.frames
     filename = "failed/" + str(counter) + ".png"
     cv2.imwrite(filename, img)
     cameracalib = CameraCalibration(chessboard_size=(9, 6), args=ARGS)
@@ -849,6 +923,7 @@ def pipeline(img):
         plt.show()
 
     overlay_img = overlay_images(binary, color_thresholded_img)
+    overlay_img = color_thresholded_img
 
     if ARGS.report:
         Utils.create_report_images("merged_thresholding.png",
@@ -885,13 +960,18 @@ def pipeline(img):
     # plt.title("Perspective Transformed Image")
     # plt.show()
 
-    if lane_finder.left_fit is None or lane_finder.right_fit is None:
+    if lane_finder.left_fit is None or lane_finder.right_fit is None or counter < 40 or ARGS.use_full_detection:
         lane_finder_img = lane_finder.full_lane_finding_step(perspective_transformed_img)
-        if ARGS.report:
-            Utils.create_report_image("lane_finder_algo.png", lane_finder_img, "Lane Finding Algorithm")
+        lane_finder_img = lane_finder.visualize_lane_fits(lane_finder_img)
     else:
-        lane_finder.partial_lane_finding_step(perspective_transformed_img, lane_finder.left_fit, lane_finder.right_fit)
+        lane_finder.partial_lane_finding_step(perspective_transformed_img)
+        if lane_finder.left_fit is None or lane_finder.right_fit is None:
+            lane_finder_img = lane_finder.full_lane_finding_step(perspective_transformed_img)
+        else:
+            lane_finder_img = lane_finder.visualize_lane_fits(Utils.binary_to_3_channel_img(perspective_transformed_img))
 
+    if ARGS.report:
+        Utils.create_report_image("lane_finder_algo.png", lane_finder_img, "Lane Finding Algorithm")
 
     # if DEBUG:
     #     plt.title("Lane Overlaid")
@@ -914,11 +994,12 @@ def pipeline(img):
     # plt.imshow(final_img)
     # plt.show()
 
-    # all =  Utils.merge_images(unwarped, thresholded, perspective_transformed_img)
+    all =  Utils.merge_2x2(unwarped, Utils.binary_to_3_channel_img(overlay_img), lane_finder_img, final_img)
     # os.remove(filename)
     counter += 1
+    cv2.imwrite("failed/all_" + str(counter) + ".png", all)
     # return final_img
-    return final_img
+    return all
 
 def test_images_pipeline():
     test_files = os.listdir("test_images")
@@ -938,6 +1019,9 @@ def argument_parser():
     parser.add_argument("--file", help="Video / Image file to use", type=str)
     parser.add_argument("--debug", help="Debug experiment", action="store_true")
     parser.add_argument("--report", help="Should we save the images for the report", action="store_true")
+    parser.add_argument("--use_full_detection", help="Use the full lane line detection algorithm", action="store_true")
+    parser.add_argument("--frames", help="Number of frames to average", type=int, default=5)
+
 
     args = parser.parse_args()
     return args
@@ -959,9 +1043,9 @@ def main():
         # plt.imshow(result)
         # plt.show()
     elif args.pipeline == "video":
-        clip = VideoFileClip(args.file).subclip(0, -45)
+        clip = VideoFileClip(args.file)
         output_clip = clip.fl_image(pipeline)
-        output_clip.write_videofile('output.mp4', audio=False)
+        output_clip.write_videofile("output_" + args.file, audio=False)
 
 if __name__ == "__main__":
     main()
