@@ -19,8 +19,6 @@ from PIL import ImageFont
 from moviepy.editor import VideoFileClip
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
-from pyexperimenthistory.pyexperimenthistory.experiment import ExperimentManager, Experiment, ExperimentManagerOptions
-
 matplotlib.style.use('ggplot')
 
 ARGS = None
@@ -82,17 +80,26 @@ logger.setLevel(logging.ERROR)
 
 class Utils:
     @staticmethod
-    def plot_binary(binary_img):
+    def binary_to_3_channel_img(binary_img):
         new_img = np.dstack((binary_img, binary_img, binary_img)) * 255
+        return new_img
+
+    @staticmethod
+    def plot_binary(binary_img):
+        new_img = Utils.binary_to_3_channel_img(binary_img)
         plt.imshow(new_img)
 
     @staticmethod
     def read_image(filename: str):
-        # return mpimg.imread(filename)
-        return cv2.imread(filename)
+        return mpimg.imread(filename)
+        # return cv2.imread(filename)
 
     @staticmethod
-    def matplotlib_row_col_display_imgs(imgs, is_grayscale, rows, cols, title, fig_size=(5, 5)):
+    def write_image(filename, img):
+        mpimg.imsave(filename, img)
+
+    @staticmethod
+    def matplotlib_row_col_display_imgs(output_name, imgs, is_grayscale, rows, cols, title, fig_size=(5, 5)):
         if len(imgs) != rows * cols:
             raise Exception("Invalid shape specified. Expected rows * cols = len(imgs)")
 
@@ -103,13 +110,13 @@ class Utils:
             per_plot_title = True
 
         fig, axs = plt.subplots(rows, cols, figsize=fig_size)
-        canvas = FigureCanvas(fig)
+        # canvas = FigureCanvas(fig)
         for r in range(rows):
             for c in range(cols):
                 if is_grayscale:
                     if rows == 1:
                         axs[c].imshow(imgs[r * cols + c], cmap='gray')
-                        axs[c].axes('off')
+                        axs[c].axis('off')
                         if per_plot_title:
                             axs[c].set_title(title[r * cols + c])
                     elif cols == 1:
@@ -119,7 +126,7 @@ class Utils:
                             axs[r].set_title(title[r * cols + c])
                     else:
                         axs[r, c].imshow(imgs[r*cols + c], cmap='gray')
-                        axs[r].axis('off')
+                        axs[r, c].axis('off')
                         if per_plot_title:
                             axs[r, c].set_title(title[r * cols + c])
                 else:
@@ -142,11 +149,13 @@ class Utils:
         if not per_plot_title:
             plt.title(title)
 
-        canvas.draw()
-        w, h = fig.canvas.get_width_height()
-        image = np.fromstring(canvas.tostring_rgb(), dtype='uint8')
-        image.shape = (h, w, 3)
-        return image
+        # canvas.draw()
+        # w, h = fig.canvas.get_width_height()
+        # image = np.fromstring(canvas.tostring_rgb(), dtype='uint8')
+        # image.shape = (h, w, 3)
+        # return image
+
+        plt.savefig(output_name)
 
     @staticmethod
     def merge_images(*imgs):
@@ -162,6 +171,26 @@ class Utils:
         image = np.asarray(image)
 
         return image
+
+    @staticmethod
+    def create_report_images(output_name, img1, img2, title1, title2, grayscale=False):
+        output_name = "report/" + output_name
+        # Try out a chess board to make sure that the calibration works
+        Utils.matplotlib_row_col_display_imgs(output_name,
+                                             [img1, img2],
+                                             is_grayscale=grayscale,
+                                             rows = 1, cols = 2,
+                                             title=[title1, title2],
+                                             fig_size=(10, 5))
+
+    @staticmethod
+    def create_report_image(output_name, img, title):
+        output_name = "report/" + output_name
+        plt.figure()
+        plt.axis('off')
+        plt.title(title)
+        plt.imshow(img)
+        plt.savefig(output_name)
 
 class CameraCalibration:
     def __init__(self, chessboard_size, args):
@@ -482,12 +511,20 @@ class LaneFinder:
     def __init__(self):
         self.current_left_lane = None
         self.current_right_lane = None
-        self.left_fit = None
-        self.right_fit = None
         self._right_lanex = None
         self._right_laney = None
         self._left_laney = None
-        self._right_lanex = None
+        self._left_lanex = None
+        # Set the width of the windows +/- margin
+        self._margin = 100
+
+    @property
+    def left_fit(self):
+        return self._left_fit
+
+    @property
+    def right_fit(self):
+        return self._right_fit
 
     def full_lane_finding_step(self, binary_img):
         Utils.plot_binary(binary_img)
@@ -520,9 +557,6 @@ class LaneFinder:
         leftx_current = leftx_base
         rightx_current = rightx_base
 
-        # Set the width of the windows +/- margin
-        margin = 100
-
         # Set minimum number of pixels found to recenter window
         minpix = 50
 
@@ -537,11 +571,11 @@ class LaneFinder:
             win_y_low = height - (window + 1) * window_height
             win_y_high = height - window * window_height
 
-            win_xleft_low = leftx_current - margin
-            win_xleft_high = leftx_current + margin
+            win_xleft_low = leftx_current - self._margin
+            win_xleft_high = leftx_current + self._margin
 
-            win_xright_low = rightx_current - margin
-            win_xright_high = rightx_current + margin
+            win_xright_low = rightx_current - self._margin
+            win_xright_high = rightx_current + self._margin
 
             # Draw the windows
             cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
@@ -610,13 +644,15 @@ class LaneFinder:
         self._right_lanex = right_fitx
         self._right_laney = ploty
 
-    def partial_lane_finding_step(self, binary_img, last_frame_left_lane : Lane, last_frame_right_lane : Lane):
+        return out_img
+
+    def partial_lane_finding_step(self, binary_img):
         nonzero = binary_img.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
 
-        left_fit = last_frame_left_lane.pixels_fit()
-        right_fit = last_frame_right_lane.pixels_fit()
+        left_fit = self._left_fit
+        right_fit = self._right_fit
 
         margin = 100
 
@@ -661,59 +697,6 @@ class LaneFinder:
             self._left_lanex = left_fitx
             self._right_lanex = right_fitx
 
-        #     self.visualize(binary_img, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx, margin, ploty)
-
-
-    # def visualize_on_perspective_img(self, binary_warped, nonzerox, nonzeroy, left_lane_idxs, right_lane_idxs, left_fitx, right_fitx,
-    #               margin, ploty):
-    #     # Create an image to draw on and an image to show the selection window
-    #     out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
-    #     window_img = np.zeros_like(out_img)
-    #     # Color in left and right line pixels
-    #     out_img[nonzeroy[left_lane_idxs], nonzerox[left_lane_idxs]] = [255, 0, 0]
-    #     out_img[nonzeroy[right_lane_idxs], nonzerox[right_lane_idxs]] = [0, 0, 255]
-    #
-    #     # Generate a polygon to illustrate the search window area
-    #     # And recast the x and y points into usable format for cv2.fillPoly()
-    #     left_line_window1 = []
-    #     left_line_window2 = []
-    #     if left_fitx is not None:
-    #         left_line_window1 = np.array([np.transpose(np.vstack([left_fitx - margin, ploty]))])
-    #         left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx + margin, ploty])))])
-    #
-    #     left_line_pts = np.hstack((left_line_window1, left_line_window2))
-    #
-    #     right_line_window1 = []
-    #     right_line_window2 = []
-    #
-    #     if right_fitx is not None:
-    #         right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - margin, ploty]))])
-    #         right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + margin, ploty])))])
-    #
-    #     right_line_pts = np.hstack((right_line_window1, right_line_window2))
-    #
-    #     # Draw the lane onto the warped blank image
-    #     if len(left_line_pts) > 0:
-    #         cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
-    #
-    #     if len(right_line_pts) > 0:
-    #         cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
-    #     result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
-
-    def distance_from_center(self, left, right, center):
-        TO_METER = np.array([[X_METER_PER_PIXEL, 0],
-                             [0, Y_METER_PER_PIXEL]])
-
-        center_dot = np.dot(center, TO_METER)
-
-        if right.p() is not None or left.p() is not None:
-            return 0
-
-        right_x = right.p() * (center_dot[1])
-        left_x = left.p() * (center_dot[1])
-
-        return ((right_x + left_x) / 2 - center_dot[0])
-
     def overlay_lane(self, image, left_lane, right_lane, transform):
         left_ys = np.linspace(0, 100, num=101) * 7.2
 
@@ -751,13 +734,27 @@ class LaneFinder:
 
         return new_img
 
-    def compute_curvature(self, fit, height):
+    def compute_curvature(self, lanex, height):
         scaled_height = height * Y_METER_PER_PIXEL
-        A = fit[0]
-        B = fit[1]
+        ploty = np.linspace(0, height - 1, num=height)# to cover same y-range as image
+
+        fit_cr = np.polyfit(ploty * Y_METER_PER_PIXEL, lanex * X_METER_PER_PIXEL, 2)
+
+        A = fit_cr[0]
+        B = fit_cr[1]
         c = ((1 + (2 * A * scaled_height + B) ** 2) ** 1.5) / np.absolute(2 * A)
         return c
 
+    def distance_from_center(self, center):
+        TO_METER = np.array([[X_METER_PER_PIXEL, 0],
+                             [0, Y_METER_PER_PIXEL]])
+
+        center_dot = np.dot(center, TO_METER)
+
+        left_x = np.poly1d(np.polyfit(self._left_laney * Y_METER_PER_PIXEL, self._left_lanex * X_METER_PER_PIXEL, 2))(center_dot[1])
+        right_x  = np.poly1d(np.polyfit(self._right_laney * Y_METER_PER_PIXEL, self._right_laney * X_METER_PER_PIXEL, 2))(center_dot[1])
+
+        return ((right_x + left_x) / 2 - center_dot[0])
 
     def overlay(self, img, roi : RegionOfInterest):
         shape = img.shape
@@ -767,15 +764,15 @@ class LaneFinder:
         if self._left_fit is None:
             left_curvature = 0.0
         else:
-            left_curvature = self.compute_curvature(self._left_fit, shape[0])
+            left_curvature = self.compute_curvature(self._left_lanex, shape[0])
 
         if self._right_fit is None:
             right_curvature = 0.0
         else:
-            right_curvature = self.compute_curvature(self._right_fit, shape[0])
+            right_curvature = self.compute_curvature(self._right_lanex, shape[0])
 
-        # center_point = (shape[1] / 2, shape[0])
-        # center_distance = self.distance_from_center(left_lane, right_lane, center_point)
+        center_point = (shape[1] / 2, shape[0])
+        center_distance = self.distance_from_center(center_point)
 
         img = self.overlay_lane(img, self._left_fit, self._right_fit, roi.inverse_matrix)
 
@@ -785,8 +782,8 @@ class LaneFinder:
         right_overlay = "Right curvature: {0:.2f}m".format(right_curvature)
         img = Utils.overlay_text(img, right_overlay, pos=(10, 90))
 
-        # center_overlay = "Distance from center: {0:.2f}m".format(center_distance)
-        # img = Utils.overlay_text(img, center_overlay, pos=(10, 180))
+        center_overlay = "Distance from center: {0:.2f}m".format(center_distance)
+        img = Utils.overlay_text(img, center_overlay, pos=(10, 180))
 
         return img
 
@@ -797,14 +794,6 @@ roi = RegionOfInterest()
 counter = 0
 
 def pipeline(img):
-    # Create an experiment Manager
-    exp_mgr_options = ExperimentManagerOptions()
-    exp_mgr_options.overwrite_if_experiment_exists = True
-    exp_mgr = ExperimentManager(exp_mgr_options)
-
-    if ARGS.experiment != "":
-        ARGS.experiment = exp_mgr.get_experiment(ARGS.experiment)
-
     global ARGS, counter
     filename = "failed/" + str(counter) + ".png"
     cv2.imwrite(filename, img)
@@ -813,18 +802,21 @@ def pipeline(img):
     # Undistort the image
     distorted = img
 
-    # Try out a chess board to make sure that the calibration works
-    chess_board_distorted = Utils.read_image('camera_cal/calibration1.jpg')
-    unwarped_chess_board = cameracalib.unwarp(chess_board_distorted, display_img=False)
-    Utils.matplotlib_row_col_display_imgs([chess_board_distorted, unwarped_chess_board],
-                                          is_grayscale=False,
-                                          rows = 1, cols = 2,
-                                          title=["Distorted Chess Board", "Undistorted Chess Board"],
-                                          fig_size=(10, 5))
-
+    if ARGS.report:
+        # Try out a chess board to make sure that the calibration works
+        chess_board_distorted = Utils.read_image('camera_cal/calibration1.jpg')
+        unwarped_chess_board = cameracalib.unwarp(chess_board_distorted, display_img=False)
+        Utils.create_report_images("chess_board_undistorted.png",
+                                   chess_board_distorted,
+                                   unwarped_chess_board,
+                                   "Distorted Chess Board",
+                                   "Undistorted Chess Board")
 
     logger.info("Performing Distortion Correction on Image:")
     unwarped = cameracalib.unwarp(distorted, display_img=False)
+
+    if ARGS.report:
+        Utils.create_report_images("input_image_undistorted.png", distorted, unwarped, "Distorted Image", "Undistorted Image")
 
     saturation_channel_img = get_saturation_channel(unwarped)
     binary = Thresholder.simple_threshold(saturation_channel_img, thresh=(90, 255))
@@ -832,6 +824,14 @@ def pipeline(img):
         plt.imshow(binary, cmap='gray')
         plt.title("Saturation Image")
         plt.show()
+
+    if ARGS.report:
+        Utils.create_report_images("saturation_threshold.png",
+                                   saturation_channel_img,
+                                   Utils.binary_to_3_channel_img(binary),
+                                   "Saturation Channel",
+                                   "Thresholded Saturation Channel",
+                                   grayscale=True)
     #
     # # Perform the Thresholding on the image
     # thresholded = Thresholder.combined_filters(unwarped, True, (10, 100), (200, 255), (0.0, 0.6))
@@ -842,44 +842,66 @@ def pipeline(img):
     #     plt.show()
 
     # overlay_img = overlay_images(binary, thresholded)
-    overlay_img = Thresholder.color_threshold(unwarped)
+    color_thresholded_img = Thresholder.color_threshold(unwarped)
+    if ARGS.debug:
+        plt.imshow(color_thresholded_img, cmap='gray')
+        plt.title("Overlay Image")
+        plt.show()
+
+    overlay_img = overlay_images(binary, color_thresholded_img)
+
+    if ARGS.report:
+        Utils.create_report_images("merged_thresholding.png",
+                                   Utils.binary_to_3_channel_img(color_thresholded_img),
+                                   Utils.binary_to_3_channel_img(overlay_img),
+                                   "Color Thresholded Image",
+                                   "Merged Final Thresholded Image")
+
     if ARGS.debug:
         plt.imshow(overlay_img, cmap='gray')
         plt.title("Overlay Image")
         plt.show()
 
-    overlay_img = overlay_images(binary, overlay_img)
+    src_transformation_img, dst_transformation_img = RegionOfInterest.polygon_overlay_img(img)
+    if ARGS.report:
+        Utils.create_report_images("roi.png",
+                                   src_transformation_img,
+                                   dst_transformation_img,
+                                   "Src Transformation",
+                                   "Dst Transformation")
 
-    if ARGS.debug:
-        plt.imshow(overlay_img, cmap='gray')
-        plt.title("Overlay Image")
-        plt.show()
-
-    if ARGS.debug:
-        src_transformation_img, dst_transformation_img = RegionOfInterest.polygon_overlay_img(img)
-        Utils.matplotlib_row_col_display_imgs([src_transformation_img, dst_transformation_img], rows=1, cols=2, is_grayscale=False, title="test")
 
     perspective_transformed_img = roi.warp_perspective_to_top_down(overlay_img)
     if ARGS.debug:
         plt.title("Perspective Transformed Image")
         Utils.plot_binary(perspective_transformed_img)
 
-    mpimg.imsave('binary.png', perspective_transformed_img)
+    if ARGS.report:
+        Utils.create_report_image("perspective.png",
+                                  Utils.binary_to_3_channel_img(perspective_transformed_img),
+                                  "Perspective Transformed Image")
 
     # plt.imshow(perspective_transformed_img, cmap='gray')
     # plt.title("Perspective Transformed Image")
     # plt.show()
 
-    if lane_finder.current_left_lane is None or lane_finder.current_right_lane is None:
-        lane_finder.full_lane_finding_step(perspective_transformed_img)
+    if lane_finder.left_fit is None or lane_finder.right_fit is None:
+        lane_finder_img = lane_finder.full_lane_finding_step(perspective_transformed_img)
+        if ARGS.report:
+            Utils.create_report_image("lane_finder_algo.png", lane_finder_img, "Lane Finding Algorithm")
     else:
         lane_finder.partial_lane_finding_step(perspective_transformed_img, lane_finder.left_fit, lane_finder.right_fit)
+
 
     # if DEBUG:
     #     plt.title("Lane Overlaid")
     #     Utils.plot_binary(binary_img)
-
     final_img = lane_finder.overlay(unwarped, roi)
+
+    if ARGS.report:
+        Utils.create_report_image("final_image.png", final_img, "Lane Overlaid Image")
+
+
     if ARGS.debug:
         plt.title("Final Image")
         plt.imshow(final_img)
@@ -915,6 +937,7 @@ def argument_parser():
     parser.add_argument("--experiment", help="The experiment name to try", type=str)
     parser.add_argument("--file", help="Video / Image file to use", type=str)
     parser.add_argument("--debug", help="Debug experiment", action="store_true")
+    parser.add_argument("--report", help="Should we save the images for the report", action="store_true")
 
     args = parser.parse_args()
     return args
