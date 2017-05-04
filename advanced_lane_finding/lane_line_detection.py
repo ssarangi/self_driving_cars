@@ -825,7 +825,7 @@ class LaneFinder:
             return 0.0
 
         left_x = np.poly1d(np.polyfit(self._left_laney * Y_METER_PER_PIXEL, self._left_lanex * X_METER_PER_PIXEL, 2))(center_dot[1])
-        right_x  = np.poly1d(np.polyfit(self._right_laney * Y_METER_PER_PIXEL, self._right_laney * X_METER_PER_PIXEL, 2))(center_dot[1])
+        right_x  = np.poly1d(np.polyfit(self._right_laney * Y_METER_PER_PIXEL, self._right_lanex * X_METER_PER_PIXEL, 2))(center_dot[1])
 
         return ((right_x + left_x) / 2 - center_dot[0])
 
