@@ -20,12 +20,18 @@
 [challenge_frame]: ./output_images/challenge_frame.png "Challenge Frame"
 [harder_challenge_frame]: ./output_images/harder_challenge_frame.png "Harder Challenge Frame"
 
-[video1]: ./project_video.mp4 "Video"
+[video_project]: ./output_videos/output_project_video.mp4 "Project Video"
+[video_challenge]: ./output_videos/output_challenge_video.mp4 "Challenge Video"
+[video_harder_challenge]: ./output_videos/output_harder_challenge_video.mp4 "Harder Challenge Video"
 
 # Introduction
 Lane finding is an important algorithm for autonomous vehicles especially in high traffic areas where the margin of error is very low. Keeping true to the lane is important for the car and this problem has many implications. Udacity's first project for lane finding from the Self Driving Car Nanodegree was an excellent introduction to this topic but it quickly made me realize how fragile the whole system was and how quickly the algorithm starts to fail. This was the 2nd project which explores the topic further by using some more advanced topics as compared to what was presented in the first project.
 
-The project revolves around finding lanes by a camera which is mounted at the center of the car.
+The project revolves around finding lanes by a camera which is mounted at the center of the car. The code is in lane_line_detection.py and the code can be run with the following command line.
+```
+python lane_line_detection.py --pipeline video --file project_video.mp4 --frames 3
+```
+The project also consists of other commands line options which can be used to control the behavior of the project.
 
 # Algorithm Overview
 The algorithm starts with first performing offline steps i.e. performing Camera Calibration. Lens typically have distortions and it is necessary to perform distortion correction for the lens before the images from the camera can be further processed.
@@ -147,11 +153,18 @@ where
 LaneFinder::distance_from_center
 
 # Problems with Algorithm
+## Simple Project Video:
+The algorithm tried out in the above sections tend to work well with the project video and didn't have any kind of project with the partial lane finding steps.
 
 ## Challenge Video:
 The biggest problem with the challenge video was the shadows under the bridge where the thresholding seems to detect either way too many regions or not detect the yellow lane lines properly.
 ![alt text][challenge_frame]
+![alt text][video_challenge]
 
 ## Harder Challenge Video:
 The harder challenge has a greater problem with the core algorithm itself. The problem is that the lane curves very highly. The problem why this becomes problematic is because the right lane curves into the region of the left lane and hence the right lane is mistakenly recognized as a part of the left lane.
 ![alt text][harder_challenge_frame]
+![alt text][video_harder_challenge]
+
+# Conclusion
+Lane finding is definitely a hard problem which is pretty evident from just the input images provided so considering different lighting conditions and weather conditions as well as road conditions it could be extremely challenging to recognize lane lines accurately. I intend to return to the harder challenges and tweak the techniques to see if I can get a better solution by doing that.
