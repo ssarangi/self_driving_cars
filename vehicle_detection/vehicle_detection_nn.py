@@ -38,9 +38,6 @@ class Frames:
         self._heatmap[self._heatmap < threshold] = 0
         return self._heatmap
 
-    def get_heatmap(self):
-        return self._heatmap
-
     def get_labels(self, bboxes, threshold):
         if len(self._prev_bboxes) == threshold:
             # Then remove the last bbox list from the previous frames
@@ -259,7 +256,7 @@ def prediction_pipeline(img):
     counter += 1
 
     # Now filter out the False positives
-    found_cars, heatmap = frames.get_labels(found_cars, threshold=12)
+    found_cars, heatmap = frames.get_labels(found_cars, threshold=20)
     heatmap = cv2.resize(heatmap, (heatmap.shape[1] // 4, heatmap.shape[0] // 4))
     img = overlay_image(img, heatmap)
     # found_cars = window_list
