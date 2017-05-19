@@ -4,20 +4,19 @@ import cv2
 import numpy as np
 
 from keras.models import Sequential
-from keras.layers.convolutional import Conv2D
-from keras.layers.convolutional import MaxPooling2D
-from keras.layers.core import Activation
-from keras.layers.core import Flatten
-from keras.layers.core import Dense
-from keras.optimizers import SGD
+from keras.layers import Dense, Dropout, Flatten, BatchNormalization, Lambda, Activation
+from keras.layers import Conv2D, MaxPooling2D
 from keras.callbacks import TensorBoard
 from keras.models import load_model
+from keras.preprocessing.image import ImageDataGenerator
 import h5py
 
 from moviepy.editor import VideoFileClip
 
 from scipy.ndimage.measurements import label
 from sklearn.model_selection import train_test_split
+
+import matplotlib.image as mpimg
 
 class Frames:
     def __init__(self):
@@ -103,17 +102,29 @@ class LeNet:
     def build(width, height, depth, weightsPath=None):
         model = Sequential()
         # First set Conv Layers
-        model.add(Conv2D(20, (5, 5), padding='same', input_shape=(width, height, depth), activation='relu'))
+        model.add(Conv2D(8, (3, 3), padding='same', input_shape=(width, height, depth), activation='relu'))
         model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        model.add(BatchNormalization())
 
         # 2nd set Conv layers
-        model.add(Conv2D(50, (5, 5), padding='same', activation='relu'))
+        model.add(Conv2D(16, (3, 3), padding='same', activation='relu'))
         model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        model.add(BatchNormalization())
 
+        model.add(Conv2D(32, (3, 3), padding='same', activation='relu'))
+        model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        model.add(BatchNormalization())
+        
+        model.add(Conv2D(64, (3, 3), padding='same', activation='relu'))
+        model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        model.add(BatchNormalization())     
+        model.add(Dropout(0.5))
+        
         # Set of FC => Relu layers
         model.add(Flatten())
-        model.add(Dense(50))
+        model.add(Dense(256))
         model.add(Activation('relu'))
+        model.add(Dropout(0.5))
 
         # Softmax classifier
         model.add(Dense(1))
@@ -128,8 +139,7 @@ from clogger import *
 
 def read_image(filename):
     logger.debug("Reading an image")
-    img = cv2.imread(filename)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = mpimg.imread(filename)
     return img
 
 def create_training_data():
@@ -137,30 +147,12 @@ def create_training_data():
     vehicles = []
     for filename in glob.iglob('training/vehicles/**/*.png', recursive=True):
         img = read_image(filename)
-        # convert to grayscale
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        # Flip the images to augment
-        flipped = cv2.flip(gray, 1)
-
-        gray = np.reshape(gray, (gray.shape[0], gray.shape[1], 1))
-        flipped = np.reshape(flipped, (flipped.shape[0], flipped.shape[1], 1))
-
-        vehicles.append(gray)
-        vehicles.append(flipped)
-
+        vehicles.append(img)
+        
     nonvehicles = []
     for filename in glob.iglob('training/non-vehicles/**/*.png', recursive=True):
         img = read_image(filename)
-        # convert to grayscale
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        # Flip the images to augment
-        flipped = cv2.flip(gray, 1)
-
-        gray = np.reshape(gray, (gray.shape[0], gray.shape[1], 1))
-        flipped = np.reshape(flipped, (flipped.shape[0], flipped.shape[1], 1))
-
-        nonvehicles.append(gray)
-        nonvehicles.append(flipped)
+        nonvehicles.append(img)
 
     return vehicles, nonvehicles
 
@@ -172,8 +164,24 @@ def argument_parser():
     return args
 
 def train_model(vehicles, non_vehicles):
+    generator = ImageDataGenerator( featurewise_center=True,
+                                samplewise_center=False,
+                                featurewise_std_normalization=False,
+                                samplewise_std_normalization=False,
+                                zca_whitening=False,
+                                rotation_range=20.,
+                                width_shift_range=0.4,
+                                height_shift_range=0.4,
+                                shear_range=0.2,
+                                zoom_range=0.2,
+                                channel_shift_range=0.1,
+                                fill_mode='nearest',
+                                horizontal_flip=True,
+                                vertical_flip=False,
+                                rescale=1.2,
+                                preprocessing_function=None)
+    
     logger.info("Training the Model")
-    opt = SGD()
     vehicles_labels = np.ones(len(vehicles))
     non_vehicles_labels = np.zeros(len(non_vehicles))
     labels = np.hstack((vehicles_labels, non_vehicles_labels))
@@ -185,13 +193,16 @@ def train_model(vehicles, non_vehicles):
         width, height, depth = vehicles[0].shape[1], vehicles[0].shape[0], 1
 
     model = LeNet.build(width, height, depth)
-    model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
     trainData, testData, trainLabels, testLabels = train_test_split(data / 255, labels, random_state=20)
-    print(trainData.shape)
-    print(trainLabels.shape)
-    model.fit(trainData, trainLabels, batch_size=128, epochs=40, verbose=1,
-              validation_data=(testData, testLabels),
-              callbacks=[TensorBoard(log_dir='logs')])
+
+    generator.fit(trainData)
+    model.fit_generator(generator.flow(trainData, trainLabels, batch_size=16),
+                      steps_per_epoch= int(len(trainData) / 16),
+                      epochs=100,
+                      verbose=1,
+                      validation_data=(testData, testLabels),
+                      callbacks=[TensorBoard(log_dir='logs')])
 
     print("[INFO] dumping weights to file...")
     model.save("lenet.h5", overwrite=True)
@@ -231,6 +242,9 @@ def generate_sliding_windows(img, window_size):
 counter = 0
 def prediction_pipeline(img):
     global counter, model, frames
+    
+    # Normalize the image
+    img = img / 255
 
     sizes = [256, 128, 96, 64]
     window_list = generate_sliding_windows(img, np.array([64, 64]))
