@@ -10,11 +10,9 @@ from keras.layers.core import Activation
 from keras.layers.core import Flatten
 from keras.layers.core import Dense
 from keras.optimizers import SGD
-from keras.utils.np_utils import to_categorical
 from keras.callbacks import TensorBoard
-from keras.models import load_model, Model
+from keras.models import load_model
 import h5py
-from keras import __version__ as keras_version
 
 from moviepy.editor import VideoFileClip
 
@@ -22,9 +20,8 @@ from scipy.ndimage.measurements import label
 from sklearn.model_selection import train_test_split
 
 class Frames:
-    def __init__(self, num_frames):
+    def __init__(self):
         self._initialized = False
-        self._num_frames = num_frames
         self._current_frame = 0
         self._prev_bboxes = []
 
@@ -45,7 +42,7 @@ class Frames:
         return self._heatmap
 
     def get_labels(self, bboxes, threshold):
-        if len(self._prev_bboxes) == self._num_frames:
+        if len(self._prev_bboxes) == threshold:
             # Then remove the last bbox list from the previous frames
             self._prev_bboxes.pop(0)
 
@@ -80,7 +77,7 @@ class Frames:
         heatmap[:, :, 2] = 0
         return bboxes, heatmap
 
-frames = Frames(14)
+frames = Frames()
 
 def overlay_image(img1, img2):
     img1[0:img2.shape[0], 0:img2.shape[1]] = img2[:, :]
@@ -123,7 +120,7 @@ class LeNet:
 
         # Softmax classifier
         model.add(Dense(1))
-        model.add(Activation('softmax'))
+        model.add(Activation('sigmoid'))
 
         if weightsPath is not None:
             model.load_weights(weightsPath)
@@ -135,8 +132,7 @@ from clogger import *
 def read_image(filename):
     logger.debug("Reading an image")
     img = cv2.imread(filename)
-    # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    # img = mpimg.imread(filename)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img
 
 def create_training_data():
@@ -144,16 +140,29 @@ def create_training_data():
     vehicles = []
     for filename in glob.iglob('training/vehicles/**/*.png', recursive=True):
         img = read_image(filename)
+        # convert to grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         # Flip the images to augment
-        flipped = cv2.flip(img, 1)
-        vehicles.append(img)
+        flipped = cv2.flip(gray, 1)
+
+        gray = np.reshape(gray, (gray.shape[0], gray.shape[1], 1))
+        flipped = np.reshape(flipped, (flipped.shape[0], flipped.shape[1], 1))
+
+        vehicles.append(gray)
         vehicles.append(flipped)
 
     nonvehicles = []
     for filename in glob.iglob('training/non-vehicles/**/*.png', recursive=True):
         img = read_image(filename)
-        flipped = cv2.flip(img, 1)
-        nonvehicles.append(img)
+        # convert to grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        # Flip the images to augment
+        flipped = cv2.flip(gray, 1)
+
+        gray = np.reshape(gray, (gray.shape[0], gray.shape[1], 1))
+        flipped = np.reshape(flipped, (flipped.shape[0], flipped.shape[1], 1))
+
+        nonvehicles.append(gray)
         nonvehicles.append(flipped)
 
     return vehicles, nonvehicles
@@ -173,13 +182,17 @@ def train_model(vehicles, non_vehicles):
     labels = np.hstack((vehicles_labels, non_vehicles_labels))
     data = np.array(vehicles + non_vehicles)
 
-    width, height, depth = vehicles[0].shape[1], vehicles[0].shape[0], vehicles[0].shape[2]
+    if len(vehicles[0].shape) == 3:
+        width, height, depth = vehicles[0].shape[1], vehicles[0].shape[0], vehicles[0].shape[2]
+    else:
+        width, height, depth = vehicles[0].shape[1], vehicles[0].shape[0], 1
+
     model = LeNet.build(width, height, depth)
     model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
-    trainData, testData, trainLabels, testLabels = train_test_split(data / 255, labels)
+    trainData, testData, trainLabels, testLabels = train_test_split(data / 255, labels, random_state=20)
     print(trainData.shape)
     print(trainLabels.shape)
-    model.fit(trainData, trainLabels, batch_size=128, epochs=8, verbose=1,
+    model.fit(trainData, trainLabels, batch_size=128, epochs=40, verbose=1,
               validation_data=(testData, testLabels),
               callbacks=[TensorBoard(log_dir='logs')])
 
@@ -196,7 +209,7 @@ def generate_sliding_windows(img, window_size):
 
     current_x = x_start
     current_y = y_start
-    overlap = np.array([0.9, 0.9])
+    overlap = np.array([0.5, 0.5])
 
     # Towards the bottom of the image use bigger bounding boxes
     # window_size = np.array([256, 128])
@@ -218,14 +231,11 @@ def generate_sliding_windows(img, window_size):
 
     return window_list
 
+counter = 0
 def prediction_pipeline(img):
     global counter, model, frames
 
     sizes = [256, 128, 96, 64]
-    window_list = []
-    # for size in sizes:
-    #     wl = generate_sliding_windows(img, np.array([size, size]))
-    #     window_list += wl
     window_list = generate_sliding_windows(img, np.array([64, 64]))
 
     frames.init(img)
@@ -237,6 +247,8 @@ def prediction_pipeline(img):
         cropped = img[window[0][1]:window[1][1], window[0][0]:window[1][0]]
         cv2.imwrite("cropped/" + str(idx) + ".png", cropped)
         cropped = cv2.resize(cropped, spatial_size)
+        cropped = cv2.cvtColor(cropped, cv2.COLOR_RGB2GRAY)
+        cropped = np.reshape(cropped, (cropped.shape[0], cropped.shape[1], 1))
 
         new_shape = (1, cropped.shape[0], cropped.shape[1], cropped.shape[2])
         cropped = np.reshape(cropped, new_shape)
@@ -264,7 +276,8 @@ def detection_on_video():
     model = load_model('lenet.h5')
 
     filename = 'project_video.mp4'
-    clip = VideoFileClip(filename).subclip(25, 30)
+    # clip = VideoFileClip(filename).subclip(25, 30)
+    clip = VideoFileClip(filename)
     output_clip = clip.fl_image(prediction_pipeline)
     output_clip.write_videofile("output_" + filename, audio=False)
 
